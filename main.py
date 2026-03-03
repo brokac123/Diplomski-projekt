@@ -11,7 +11,7 @@ models.Base.metadata.create_all(bind=database.engine)
 def home():
     return {"message": "Sustav za rezervacije je spreman!"}
 
-# --- RUTE ZA KORISNIKE ---
+
 
 @app.post("/users/")
 def create_user(username: str, email: str, db: Session = Depends(database.get_db)):
@@ -25,7 +25,6 @@ def create_user(username: str, email: str, db: Session = Depends(database.get_db
 def get_all_users(db: Session = Depends(database.get_db)):
     return db.query(models.User).all()
 
-# --- RUTE ZA DOGAĐAJE ---
 
 @app.post("/events/")
 def create_event(title: str, tickets: int = 100, db: Session = Depends(database.get_db)):
