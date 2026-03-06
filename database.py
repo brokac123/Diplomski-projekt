@@ -2,13 +2,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# 'db' je ime servisa koje cemo napisati u docker-compose file-u
-SQLALCHEMY_DATABASE_URL = "postgresql://user:password@db:5432/booking_db"
+# 'db' je ime servisa iz docker-compose.yml
+SQLALCHEMY_DATABASE_URL = "postgresql://user:password@db/booking_db"
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 Base = declarative_base()
 
+# Dependency koji ćemo koristiti u rutama
 def get_db():
     db = SessionLocal()
     try:

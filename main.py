@@ -1,39 +1,47 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
-import models, database
+from typing import List
+import models, schemas, crud
+from database import engine, get_db
+
+# Kreiraj tablice automatski
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Event Booking API")
 
-# Kreiranje tablica (ako već ne postoje)
-models.Base.metadata.create_all(bind=database.engine)
+# USERS
+@app.post("/users/", response_model=schemas.User)
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    return crud.create_user(db=db, user=user)
 
-@app.get("/")
-def home():
-    return {"message": "Sustav za rezervacije je spreman!"}
+@app.get("/users/", response_model=List[schemas.User])
+def read_users(db: Session = Depends(get_db)):
+    return crud.get_users(db)
 
+# EVENTS
+@app.post("/events/", response_model=schemas.Event)
+def create_event(event: schemas.EventCreate, db: Session = Depends(get_db)):
+    return crud.create_event(db=db, event=event)
 
+@app.get("/events/", response_model=List[schemas.Event])
+def read_events(db: Session = Depends(get_db)):
+    return crud.get_events(db)
 
-@app.post("/users/")
-def create_user(username: str, email: str, db: Session = Depends(database.get_db)):
-    db_user = models.User(username=username, email=email)
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
+@app.put("/events/{event_id}", response_model=schemas.Event)
+def update_event(event_id: int, event: schemas.EventUpdate, db: Session = Depends(get_db)):
+    return crud.update_event(db=db, event_id=event_id, event_update=event)
 
-@app.get("/users/")
-def get_all_users(db: Session = Depends(database.get_db)):
-    return db.query(models.User).all()
+# BOOKINGS
+@app.post("/bookings/", response_model=schemas.Booking)
+def create_booking(booking: schemas.BookingCreate, db: Session = Depends(get_db)):
+    db_booking = crud.create_booking(db=db, booking=booking)
+    if db_booking is None:
+        raise HTTPException(status_code=400, detail="No tickets available or event not found")
+    return db_booking
 
-
-@app.post("/events/")
-def create_event(title: str, tickets: int = 100, db: Session = Depends(database.get_db)):
-    new_event = models.Event(title=title, available_tickets=tickets)
-    db.add(new_event)
-    db.commit()
-    db.refresh(new_event)
-    return new_event
-
-@app.get("/events/")
-def list_events(db: Session = Depends(database.get_db)):
-    return db.query(models.Event).all()
+@app.delete("/bookings/{booking_id}")
+def delete_booking(booking_id: int, db: Session = Depends(get_db)):
+    success = crud.delete_booking(db=db, booking_id=booking_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return {"message": "Booking cancelled successfully"}
