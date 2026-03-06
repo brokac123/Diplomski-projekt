@@ -10,6 +10,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
+
 # Dependency koji ćemo koristiti u rutama
 def get_db():
     db = SessionLocal()
