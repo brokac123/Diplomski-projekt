@@ -1,28 +1,27 @@
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-
-import app.models as models, app.schemas as schemas, app.crud as crud
-from app.database import engine, get_db
-
+from app import models, schemas, crud
+from app.database import SessionLocal, engine
 
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(
-    title="Event Booking API",
-    description="API za rezervaciju karata - Diplomski projekt (Performance Testing)",
-    version="1.0.0",
-)
+app = FastAPI(title="Booking API - Finalna Verzija")
 
 
-@app.post("/users/", response_model=schemas.User, tags=["Users"])
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    return crud.create_user(db=db, user=user)
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# --- USERS ---
 
 
 @app.get("/users/", response_model=List[schemas.User], tags=["Users"])
 def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Dohvaća listu korisnika uz podršku za paginaciju."""
     return crud.get_users(db, skip=skip, limit=limit)
 
 
@@ -34,30 +33,23 @@ def read_user(user_id: int, db: Session = Depends(get_db)):
     return db_user
 
 
+@app.post("/users/", response_model=schemas.User, tags=["Users"])
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    return crud.create_user(db=db, user=user)
+
+
 @app.delete("/users/{user_id}", tags=["Users"])
 def delete_user(user_id: int, db: Session = Depends(get_db)):
-    """Briše korisnika i sve njegove povezane rezervacije."""
-    success = crud.delete_user(db, user_id=user_id)
-    if not success:
+    if not crud.delete_user(db, user_id=user_id):
         raise HTTPException(status_code=404, detail="User not found")
-    return {"message": "User and their bookings deleted successfully"}
+    return {"message": f"User {user_id} deleted"}
 
 
-@app.get(
-    "/users/{user_id}/bookings", response_model=List[schemas.Booking], tags=["Users"]
-)
-def read_user_bookings(user_id: int, db: Session = Depends(get_db)):
-    return crud.get_user_bookings(db, user_id=user_id)
-
-
-@app.post("/events/", response_model=schemas.Event, tags=["Events"])
-def create_event(event: schemas.EventCreate, db: Session = Depends(get_db)):
-    return crud.create_event(db=db, event=event)
+# --- EVENTS ---
 
 
 @app.get("/events/", response_model=List[schemas.Event], tags=["Events"])
 def read_events(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Dohvaća listu događaja uz podršku za paginaciju."""
     return crud.get_events(db, skip=skip, limit=limit)
 
 
@@ -69,23 +61,24 @@ def read_event(event_id: int, db: Session = Depends(get_db)):
     return db_event
 
 
-@app.put("/events/{event_id}", response_model=schemas.Event, tags=["Events"])
-def update_event(
-    event_id: int, event: schemas.EventUpdate, db: Session = Depends(get_db)
-):
-    db_event = crud.update_event(db=db, event_id=event_id, event_update=event)
-    if db_event is None:
-        raise HTTPException(status_code=404, detail="Event not found")
-    return db_event
+@app.post("/events/", response_model=schemas.Event, tags=["Events"])
+def create_event(event: schemas.EventCreate, db: Session = Depends(get_db)):
+    return crud.create_event(db=db, event=event)
 
 
 @app.delete("/events/{event_id}", tags=["Events"])
 def delete_event(event_id: int, db: Session = Depends(get_db)):
-    """Briše događaj i sve rezervacije vezane uz njega."""
-    success = crud.delete_event(db, event_id=event_id)
-    if not success:
+    if not crud.delete_event(db, event_id=event_id):
         raise HTTPException(status_code=404, detail="Event not found")
-    return {"message": "Event and its bookings deleted successfully"}
+    return {"message": f"Event {event_id} deleted"}
+
+
+# --- BOOKINGS ---
+
+
+@app.get("/bookings/", response_model=List[schemas.Booking], tags=["Bookings"])
+def read_bookings(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return crud.get_bookings(db, skip=skip, limit=limit)
 
 
 @app.post("/bookings/", response_model=schemas.Booking, tags=["Bookings"])
@@ -93,13 +86,13 @@ def create_booking(booking: schemas.BookingCreate, db: Session = Depends(get_db)
     db_booking = crud.create_booking(db=db, booking=booking)
     if db_booking is None:
         raise HTTPException(
-            status_code=400,
-            detail="Rezervacija neuspješna: Provjerite ID korisnika/događaja ili dostupnost karata.",
+            status_code=400, detail="Booking failed: No tickets or invalid IDs"
         )
     return db_booking
 
 
-@app.get("/bookings/", response_model=List[schemas.Booking], tags=["Bookings"])
-def read_bookings(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Dohvaća listu svih rezervacija uz podršku za paginaciju."""
-    return crud.get
+@app.delete("/bookings/{booking_id}", tags=["Bookings"])
+def delete_booking(booking_id: int, db: Session = Depends(get_db)):
+    if not crud.delete_booking(db, booking_id=booking_id):
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return {"message": "Booking deleted and ticket returned"}

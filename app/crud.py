@@ -2,6 +2,15 @@ from sqlalchemy.orm import Session
 import app.models as models, app.schemas as schemas
 
 
+# --- USER CRUD ---
+def get_user(db: Session, user_id: int):
+    return db.query(models.User).filter(models.User.id == user_id).first()
+
+
+def get_users(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.User).offset(skip).limit(limit).all()
+
+
 def create_user(db: Session, user: schemas.UserCreate):
     db_user = models.User(username=user.username, email=user.email)
     db.add(db_user)
@@ -10,18 +19,10 @@ def create_user(db: Session, user: schemas.UserCreate):
     return db_user
 
 
-def get_users(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.User).offset(skip).limit(limit).all()
-
-
-def get_user(db: Session, user_id: int):
-    return db.query(models.User).filter(models.User.id == user_id).first()
-
-
 def delete_user(db: Session, user_id: int):
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if db_user:
-        # Prvo brišemo sve njegove rezervacije (ili pustimo DB da odradi CASCADE)
+        # Brišemo rezervacije usera da spriječimo Foreign Key greške
         db.query(models.Booking).filter(models.Booking.user_id == user_id).delete()
         db.delete(db_user)
         db.commit()
@@ -29,7 +30,17 @@ def delete_user(db: Session, user_id: int):
     return False
 
 
+# --- EVENT CRUD ---
+def get_event(db: Session, event_id: int):
+    return db.query(models.Event).filter(models.Event.id == event_id).first()
+
+
+def get_events(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.Event).offset(skip).limit(limit).all()
+
+
 def create_event(db: Session, event: schemas.EventCreate):
+    # available_tickets je na početku isti kao total_tickets
     db_event = models.Event(**event.dict(), available_tickets=event.total_tickets)
     db.add(db_event)
     db.commit()
@@ -37,18 +48,9 @@ def create_event(db: Session, event: schemas.EventCreate):
     return db_event
 
 
-def get_events(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Event).offset(skip).limit(limit).all()
-
-
-def get_event(db: Session, event_id: int):
-    return db.query(models.Event).filter(models.Event.id == event_id).first()
-
-
 def delete_event(db: Session, event_id: int):
     db_event = db.query(models.Event).filter(models.Event.id == event_id).first()
     if db_event:
-        # Brišemo i sve rezervacije vezane uz ovaj event
         db.query(models.Booking).filter(models.Booking.event_id == event_id).delete()
         db.delete(db_event)
         db.commit()
@@ -56,8 +58,12 @@ def delete_event(db: Session, event_id: int):
     return False
 
 
+# --- BOOKING CRUD ---
+def get_bookings(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.Booking).offset(skip).limit(limit).all()
+
+
 def create_booking(db: Session, booking: schemas.BookingCreate):
-    # (Zadržavamo tvoju logiku za sada kako bismo je mogli testirati)
     event = db.query(models.Event).filter(models.Event.id == booking.event_id).first()
     if not event or event.available_tickets <= 0:
         return None
@@ -72,10 +78,6 @@ def create_booking(db: Session, booking: schemas.BookingCreate):
     db.commit()
     db.refresh(db_booking)
     return db_booking
-
-
-def get_bookings(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.Booking).offset(skip).limit(limit).all()
 
 
 def delete_booking(db: Session, booking_id: int):
