@@ -21,8 +21,9 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/users/", response_model=List[schemas.User], tags=["Users"])
-def read_users(db: Session = Depends(get_db)):
-    return crud.get_users(db)
+def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """Dohvaća listu korisnika uz podršku za paginaciju."""
+    return crud.get_users(db, skip=skip, limit=limit)
 
 
 @app.get("/users/{user_id}", response_model=schemas.User, tags=["Users"])
@@ -31,6 +32,15 @@ def read_user(user_id: int, db: Session = Depends(get_db)):
     if db_user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return db_user
+
+
+@app.delete("/users/{user_id}", tags=["Users"])
+def delete_user(user_id: int, db: Session = Depends(get_db)):
+    """Briše korisnika i sve njegove povezane rezervacije."""
+    success = crud.delete_user(db, user_id=user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "User and their bookings deleted successfully"}
 
 
 @app.get(
@@ -46,8 +56,9 @@ def create_event(event: schemas.EventCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/events/", response_model=List[schemas.Event], tags=["Events"])
-def read_events(db: Session = Depends(get_db)):
-    return crud.get_events(db)
+def read_events(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """Dohvaća listu događaja uz podršku za paginaciju."""
+    return crud.get_events(db, skip=skip, limit=limit)
 
 
 @app.get("/events/{event_id}", response_model=schemas.Event, tags=["Events"])
@@ -68,6 +79,15 @@ def update_event(
     return db_event
 
 
+@app.delete("/events/{event_id}", tags=["Events"])
+def delete_event(event_id: int, db: Session = Depends(get_db)):
+    """Briše događaj i sve rezervacije vezane uz njega."""
+    success = crud.delete_event(db, event_id=event_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"message": "Event and its bookings deleted successfully"}
+
+
 @app.post("/bookings/", response_model=schemas.Booking, tags=["Bookings"])
 def create_booking(booking: schemas.BookingCreate, db: Session = Depends(get_db)):
     db_booking = crud.create_booking(db=db, booking=booking)
@@ -80,18 +100,6 @@ def create_booking(booking: schemas.BookingCreate, db: Session = Depends(get_db)
 
 
 @app.get("/bookings/", response_model=List[schemas.Booking], tags=["Bookings"])
-def read_bookings(db: Session = Depends(get_db)):
-    return crud.get_bookings(db)
-
-
-@app.delete("/bookings/{booking_id}", tags=["Bookings"])
-def delete_booking(booking_id: int, db: Session = Depends(get_db)):
-    success = crud.delete_booking(db=db, booking_id=booking_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Booking not found")
-    return {"message": "Booking cancelled successfully"}
-
-
-@app.get("/", tags=["Health"])
-def health_check():
-    return {"status": "API is running"}
+def read_bookings(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """Dohvaća listu svih rezervacija uz podršku za paginaciju."""
+    return crud.get

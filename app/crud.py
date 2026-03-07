@@ -10,26 +10,26 @@ def create_user(db: Session, user: schemas.UserCreate):
     return db_user
 
 
-def get_users(db: Session):
-    return db.query(models.User).all()
+def get_users(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.User).offset(skip).limit(limit).all()
 
 
 def get_user(db: Session, user_id: int):
     return db.query(models.User).filter(models.User.id == user_id).first()
 
 
-def update_user(db: Session, user_id: int, user_update: schemas.UserCreate):
+def delete_user(db: Session, user_id: int):
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if db_user:
-        db_user.username = user_update.username
-        db_user.email = user_update.email
+        # Prvo brišemo sve njegove rezervacije (ili pustimo DB da odradi CASCADE)
+        db.query(models.Booking).filter(models.Booking.user_id == user_id).delete()
+        db.delete(db_user)
         db.commit()
-        db.refresh(db_user)
-    return db_user
+        return True
+    return False
 
 
 def create_event(db: Session, event: schemas.EventCreate):
-    # Prilikom kreiranja, available_tickets je jednako total_tickets
     db_event = models.Event(**event.dict(), available_tickets=event.total_tickets)
     db.add(db_event)
     db.commit()
@@ -37,40 +37,36 @@ def create_event(db: Session, event: schemas.EventCreate):
     return db_event
 
 
-def get_events(db: Session):
-    return db.query(models.Event).all()
+def get_events(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.Event).offset(skip).limit(limit).all()
 
 
 def get_event(db: Session, event_id: int):
     return db.query(models.Event).filter(models.Event.id == event_id).first()
 
 
-def update_event(db: Session, event_id: int, event_update: schemas.EventUpdate):
+def delete_event(db: Session, event_id: int):
     db_event = db.query(models.Event).filter(models.Event.id == event_id).first()
     if db_event:
-        # exclude_unset=True osigurava da ne pregazimo polja koja nismo poslali u PUT zahtjevu
-        for key, value in event_update.dict(exclude_unset=True).items():
-            setattr(db_event, key, value)
+        # Brišemo i sve rezervacije vezane uz ovaj event
+        db.query(models.Booking).filter(models.Booking.event_id == event_id).delete()
+        db.delete(db_event)
         db.commit()
-        db.refresh(db_event)
-    return db_event
+        return True
+    return False
 
 
 def create_booking(db: Session, booking: schemas.BookingCreate):
-    # 1. Provjeri postoji li event i ima li dovoljno slobodnih karata
+    # (Zadržavamo tvoju logiku za sada kako bismo je mogli testirati)
     event = db.query(models.Event).filter(models.Event.id == booking.event_id).first()
     if not event or event.available_tickets <= 0:
         return None
 
-    # 2. Provjeri postoji li uopće taj korisnik
     user = db.query(models.User).filter(models.User.id == booking.user_id).first()
     if not user:
         return None
 
-    # 3. Smanji broj dostupnih karata za event
     event.available_tickets -= 1
-
-    # 4. Kreiraj zapis o rezervaciji
     db_booking = models.Booking(user_id=booking.user_id, event_id=booking.event_id)
     db.add(db_booking)
     db.commit()
@@ -78,12 +74,8 @@ def create_booking(db: Session, booking: schemas.BookingCreate):
     return db_booking
 
 
-def get_bookings(db: Session):
-    return db.query(models.Booking).all()
-
-
-def get_user_bookings(db: Session, user_id: int):
-    return db.query(models.Booking).filter(models.Booking.user_id == user_id).all()
+def get_bookings(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.Booking).offset(skip).limit(limit).all()
 
 
 def delete_booking(db: Session, booking_id: int):
@@ -91,7 +83,6 @@ def delete_booking(db: Session, booking_id: int):
         db.query(models.Booking).filter(models.Booking.id == booking_id).first()
     )
     if db_booking:
-        # Prije brisanja rezervacije, vratimo kartu u "bazen" slobodnih karata
         event = (
             db.query(models.Event)
             .filter(models.Event.id == db_booking.event_id)
@@ -99,7 +90,6 @@ def delete_booking(db: Session, booking_id: int):
         )
         if event:
             event.available_tickets += 1
-
         db.delete(db_booking)
         db.commit()
         return True

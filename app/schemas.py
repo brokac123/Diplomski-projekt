@@ -3,6 +3,10 @@ from typing import List, Optional
 from datetime import datetime
 
 
+class BaseConfig:
+    from_attributes = True
+
+
 class UserBase(BaseModel):
     username: str
     email: EmailStr
@@ -33,6 +37,7 @@ class EventUpdate(BaseModel):
     title: Optional[str] = None
     location: Optional[str] = None
     total_tickets: Optional[int] = None
+    available_tickets: Optional[int] = None
 
 
 class Event(EventBase):
@@ -43,15 +48,17 @@ class Event(EventBase):
         from_attributes = True
 
 
-class BookingCreate(BaseModel):
-    user_id: int
+class BookingBase(BaseModel):
     event_id: int
+    user_id: int
 
 
-class Booking(BaseModel):
+class BookingCreate(BookingBase):
+    pass
+
+
+class Booking(BookingBase):
     id: int
-    user_id: int
-    event_id: int
     timestamp: datetime
 
     class Config:
