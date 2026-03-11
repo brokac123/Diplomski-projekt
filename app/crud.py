@@ -30,6 +30,34 @@ def delete_user(db: Session, user_id: int):
     return False
 
 
+def update_user(db: Session, user_id: int, user: schemas.UserCreate):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        return None
+
+    db_user.username = user.username
+    db_user.email = user.email
+
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+
+def patch_user(db: Session, user_id: int, user: schemas.UserUpdate):
+    db_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not db_user:
+        return None
+
+    update_data = user.dict(exclude_unset=True)
+
+    for key, value in update_data.items():
+        setattr(db_user, key, value)
+
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+
 # --- EVENT CRUD ---
 def get_event(db: Session, event_id: int):
     return db.query(models.Event).filter(models.Event.id == event_id).first()
@@ -58,6 +86,41 @@ def delete_event(db: Session, event_id: int):
     return False
 
 
+def update_event(db: Session, event_id: int, event: schemas.EventCreate):
+    db_event = db.query(models.Event).filter(models.Event.id == event_id).first()
+    if not db_event:
+        return None
+
+    booked_tickets = db_event.total_tickets - db_event.available_tickets
+
+    if event.total_tickets < booked_tickets:
+        return None  # ili raise error
+
+    db_event.title = event.title
+    db_event.location = event.location
+    db_event.total_tickets = event.total_tickets
+    db_event.available_tickets = event.total_tickets - booked_tickets
+
+    db.commit()
+    db.refresh(db_event)
+    return db_event
+
+
+def patch_event(db: Session, event_id: int, event: schemas.EventUpdate):
+    db_event = db.query(models.Event).filter(models.Event.id == event_id).first()
+    if not db_event:
+        return None
+
+    update_data = event.dict(exclude_unset=True)
+
+    for key, value in update_data.items():
+        setattr(db_event, key, value)
+
+    db.commit()
+    db.refresh(db_event)
+    return db_event
+
+
 # --- BOOKING CRUD ---
 def get_bookings(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.Booking).offset(skip).limit(limit).all()
@@ -78,6 +141,18 @@ def create_booking(db: Session, booking: schemas.BookingCreate):
     db.commit()
     db.refresh(db_booking)
     return db_booking
+
+
+def get_bookings_by_user(db: Session, user_id: int):
+    return db.query(models.Booking).filter(models.Booking.user_id == user_id).all()
+
+
+def get_bookings_by_event(db: Session, event_id: int):
+    return db.query(models.Booking).filter(models.Booking.event_id == event_id).all()
+
+
+def get_booking(db: Session, booking_id: int):
+    return db.query(models.Booking).filter(models.Booking.id == booking_id).first()
 
 
 def delete_booking(db: Session, booking_id: int):

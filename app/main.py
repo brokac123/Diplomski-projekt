@@ -6,7 +6,7 @@ from app.database import SessionLocal, engine
 
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Booking API - Finalna Verzija")
+app = FastAPI(title="Booking API - Verzija 1")
 
 
 def get_db():
@@ -45,6 +45,30 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
     return {"message": f"User {user_id} deleted"}
 
 
+@app.put("/users/{user_id}", response_model=schemas.User, tags=["Users"])
+def update_user(user_id: int, user: schemas.UserCreate, db: Session = Depends(get_db)):
+    db_user = crud.update_user(db, user_id, user)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db_user
+
+
+@app.patch("/users/{user_id}", response_model=schemas.User, tags=["Users"])
+def patch_user(user_id: int, user: schemas.UserUpdate, db: Session = Depends(get_db)):
+    db_user = crud.patch_user(db, user_id, user)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return db_user
+
+
+@app.get(
+    "/users/{user_id}/bookings", response_model=List[schemas.Booking], tags=["Users"]
+)
+def get_user_bookings(user_id: int, db: Session = Depends(get_db)):
+    bookings = crud.get_bookings_by_user(db, user_id)
+    return bookings
+
+
 # --- EVENTS ---
 
 
@@ -73,6 +97,34 @@ def delete_event(event_id: int, db: Session = Depends(get_db)):
     return {"message": f"Event {event_id} deleted"}
 
 
+@app.put("/events/{event_id}", response_model=schemas.Event, tags=["Events"])
+def update_event(
+    event_id: int, event: schemas.EventCreate, db: Session = Depends(get_db)
+):
+    db_event = crud.update_event(db, event_id, event)
+    if db_event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return db_event
+
+
+@app.patch("/events/{event_id}", response_model=schemas.Event, tags=["Events"])
+def patch_event(
+    event_id: int, event: schemas.EventUpdate, db: Session = Depends(get_db)
+):
+    db_event = crud.patch_event(db, event_id, event)
+    if db_event is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return db_event
+
+
+@app.get(
+    "/events/{event_id}/bookings", response_model=List[schemas.Booking], tags=["Events"]
+)
+def get_event_bookings(event_id: int, db: Session = Depends(get_db)):
+    bookings = crud.get_bookings_by_event(db, event_id)
+    return bookings
+
+
 # --- BOOKINGS ---
 
 
@@ -96,3 +148,11 @@ def delete_booking(booking_id: int, db: Session = Depends(get_db)):
     if not crud.delete_booking(db, booking_id=booking_id):
         raise HTTPException(status_code=404, detail="Booking not found")
     return {"message": "Booking deleted and ticket returned"}
+
+
+@app.get("/bookings/{booking_id}", response_model=schemas.Booking, tags=["Bookings"])
+def read_booking(booking_id: int, db: Session = Depends(get_db)):
+    booking = crud.get_booking(db, booking_id)
+    if booking is None:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return booking
