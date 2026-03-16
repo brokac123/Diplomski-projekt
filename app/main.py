@@ -3,10 +3,15 @@ from sqlalchemy.orm import Session
 from typing import List
 from app import models, schemas, crud
 from app.database import SessionLocal, engine
+from prometheus_fastapi_instrumentator import Instrumentator
+
 
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Booking API - Verzija 1")
+
+
+Instrumentator().instrument(app).expose(app)
 
 
 def get_db():
@@ -92,7 +97,7 @@ def create_event(event: schemas.EventCreate, db: Session = Depends(get_db)):
 
 @app.delete("/events/{event_id}", tags=["Events"])
 def delete_event(event_id: int, db: Session = Depends(get_db)):
-    if not crud.delete_event(db, event_id=event_id):
+    if not crud.delete_event(db, event_id):
         raise HTTPException(status_code=404, detail="Event not found")
     return {"message": f"Event {event_id} deleted"}
 

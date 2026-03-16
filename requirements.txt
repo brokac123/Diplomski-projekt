@@ -10,9 +10,11 @@ psycopg2-binary==2.9.9
 pydantic[email]==2.5.3
 email-validator==2.1.0.post1
 
-# Data Generation (za seed_data.py)
+# Monitoring
+prometheus-fastapi-instrumentator==6.1.0
+
+# Data Generation
 faker==22.6.0
 
-# Alati za analizu i testiranje 
-locust==2.24.0
+# HTTP client
 httpx==0.26.0
