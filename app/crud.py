@@ -47,7 +47,7 @@ def patch_user(db: Session, user_id: int, user: schemas.UserUpdate):
     db_user = db.query(models.User).filter(models.User.id == user_id).first()
     if not db_user:
         return None
-    for key, value in user.dict(exclude_unset=True).items():
+    for key, value in user.model_dump(exclude_unset=True).items():
         setattr(db_user, key, value)
     db.commit()
     db.refresh(db_user)
@@ -65,7 +65,7 @@ def get_events(db: Session, skip: int = 0, limit: int = 100):
 
 
 def create_event(db: Session, event: schemas.EventCreate):
-    db_event = models.Event(**event.dict(), available_tickets=event.total_tickets)
+    db_event = models.Event(**event.model_dump(), available_tickets=event.total_tickets)
     db.add(db_event)
     db.commit()
     db.refresh(db_event)
@@ -105,7 +105,7 @@ def patch_event(db: Session, event_id: int, event: schemas.EventUpdate):
     db_event = db.query(models.Event).filter(models.Event.id == event_id).first()
     if not db_event:
         return None
-    for key, value in event.dict(exclude_unset=True).items():
+    for key, value in event.model_dump(exclude_unset=True).items():
         setattr(db_event, key, value)
     db.commit()
     db.refresh(db_event)
@@ -212,18 +212,17 @@ def get_global_stats(db: Session):
         .scalar()
     )
 
-    # average occupancy across all events
-    events = db.query(models.Event).all()
-    if events:
-        avg_occupancy = round(
-            sum(
-                (e.total_tickets - e.available_tickets) / e.total_tickets * 100
-                for e in events if e.total_tickets > 0
-            ) / len(events),
-            2,
+    # average occupancy across all events (SQL-side calculation)
+    avg_occupancy_result = (
+        db.query(
+            func.avg(
+                (models.Event.total_tickets - models.Event.available_tickets) * 100.0 / models.Event.total_tickets
+            )
         )
-    else:
-        avg_occupancy = 0.0
+        .filter(models.Event.total_tickets > 0)
+        .scalar()
+    )
+    avg_occupancy = round(avg_occupancy_result or 0.0, 2)
 
     # total revenue from confirmed bookings
     revenue_result = (
@@ -305,6 +304,7 @@ def cancel_booking(db: Session, booking_id: int):
     db_booking = (
         db.query(models.Booking)
         .filter(models.Booking.id == booking_id)
+        .with_for_update()
         .first()
     )
     if not db_booking:

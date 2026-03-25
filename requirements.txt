@@ -16,5 +16,3 @@ prometheus-fastapi-instrumentator==6.1.0
 # Data Generation
 faker==22.6.0
 
-# HTTP client
-httpx==0.26.0

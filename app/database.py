@@ -1,9 +1,11 @@
+import os
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 
-# 'db' je ime servisa iz docker-compose.yml
-SQLALCHEMY_DATABASE_URL = "postgresql://user:password@db/booking_db"
+SQLALCHEMY_DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql://user:password@db/booking_db"
+)
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,

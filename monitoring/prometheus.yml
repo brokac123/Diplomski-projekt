@@ -1,5 +1,8 @@
 global:
   scrape_interval: 5s
+  evaluation_interval: 5s
+  external_labels:
+    environment: 'local'
 
 scrape_configs:
   - job_name: "fastapi"
