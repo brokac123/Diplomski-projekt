@@ -13,7 +13,7 @@
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": { "fixedColor": "blue", "mode": "fixed" },
           "custom": { "fillOpacity": 20, "lineWidth": 2 },
           "unit": "short"
         },
@@ -21,7 +21,7 @@
       },
       "targets": [
         {
-          "expr": "k6_vus{job=\"k6\"}",
+          "expr": "k6_vus",
           "legendFormat": "Active VUs",
           "refId": "A"
         }
@@ -42,14 +42,14 @@
       },
       "targets": [
         {
-          "expr": "rate(k6_http_reqs_total[30s])",
-          "legendFormat": "RPS",
+          "expr": "sum(rate(k6_http_reqs_total[30s]))",
+          "legendFormat": "Total RPS",
           "refId": "A"
         }
       ]
     },
     {
-      "title": "Response Time Percentiles",
+      "title": "Response Time Percentiles (ms)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
@@ -63,22 +63,22 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, rate(k6_http_req_duration_seconds_bucket[30s])) * 1000",
+          "expr": "avg(k6_http_req_duration_p50) * 1000",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.90, rate(k6_http_req_duration_seconds_bucket[30s])) * 1000",
+          "expr": "avg(k6_http_req_duration_p90) * 1000",
           "legendFormat": "p90",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.95, rate(k6_http_req_duration_seconds_bucket[30s])) * 1000",
+          "expr": "avg(k6_http_req_duration_p95) * 1000",
           "legendFormat": "p95",
           "refId": "C"
         },
         {
-          "expr": "histogram_quantile(0.99, rate(k6_http_req_duration_seconds_bucket[30s])) * 1000",
+          "expr": "avg(k6_http_req_duration_p99) * 1000",
           "legendFormat": "p99",
           "refId": "D"
         }
@@ -101,16 +101,37 @@
       },
       "targets": [
         {
-          "expr": "rate(k6_http_req_failed_total[30s]) / rate(k6_http_reqs_total[30s])",
+          "expr": "avg(k6_http_req_failed_rate)",
           "legendFormat": "Error Rate",
           "refId": "A"
         }
       ]
     },
     {
-      "title": "Response Time by Endpoint",
+      "title": "RPS by Endpoint",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 0, "lineWidth": 1 },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (name) (rate(k6_http_reqs_total[30s]))",
+          "legendFormat": "{{ name }}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Response Time by Endpoint (p95 ms)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "fieldConfig": {
         "defaults": {
@@ -122,7 +143,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(k6_http_req_duration_seconds_bucket[30s])) * 1000",
+          "expr": "k6_http_req_duration_p95 * 1000",
           "legendFormat": "{{ name }} p95",
           "refId": "A"
         }
@@ -148,7 +169,7 @@
       },
       "targets": [
         {
-          "expr": "k6_booking_success_total",
+          "expr": "sum(k6_booking_success_total)",
           "legendFormat": "Successful Bookings",
           "refId": "A"
         }
@@ -172,7 +193,7 @@
       },
       "targets": [
         {
-          "expr": "k6_booking_sold_out_total",
+          "expr": "sum(k6_booking_sold_out_total)",
           "legendFormat": "Sold Out",
           "refId": "A"
         }
@@ -196,7 +217,7 @@
       },
       "targets": [
         {
-          "expr": "k6_booking_fail_total",
+          "expr": "sum(k6_booking_fail_total)",
           "legendFormat": "Failed",
           "refId": "A"
         }
@@ -220,7 +241,7 @@
       },
       "targets": [
         {
-          "expr": "k6_http_reqs_total",
+          "expr": "sum(k6_http_reqs_total)",
           "legendFormat": "Total Requests",
           "refId": "A"
         }
@@ -249,7 +270,7 @@
       },
       "targets": [
         {
-          "expr": "rate(k6_http_req_duration_seconds_sum[1m]) / rate(k6_http_req_duration_seconds_count[1m]) * 1000",
+          "expr": "avg(k6_http_req_duration_avg) * 1000",
           "legendFormat": "Avg Duration",
           "refId": "A"
         }
@@ -273,9 +294,112 @@
       },
       "targets": [
         {
-          "expr": "max_over_time(k6_vus{job=\"k6\"}[1h])",
+          "expr": "max_over_time(k6_vus[1h])",
           "legendFormat": "Peak VUs",
           "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "CPU Usage (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "yellow", "mode": "fixed" },
+          "custom": { "fillOpacity": 20, "lineWidth": 2 },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[30s])) * 100)",
+          "legendFormat": "CPU Usage %",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Memory Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 20, "lineWidth": 2 },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes",
+          "legendFormat": "Used Memory",
+          "refId": "A"
+        },
+        {
+          "expr": "node_memory_MemTotal_bytes",
+          "legendFormat": "Total Memory",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Response Time vs Virtual Users",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 40 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 0, "lineWidth": 2 }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Active VUs" },
+            "properties": [
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "unit", "value": "short" },
+              { "id": "custom.fillOpacity", "value": 10 },
+              { "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "p95" },
+            "properties": [
+              { "id": "unit", "value": "ms" },
+              { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "p50" },
+            "properties": [
+              { "id": "unit", "value": "ms" },
+              { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "avg(k6_http_req_duration_p95) * 1000",
+          "legendFormat": "p95",
+          "refId": "A"
+        },
+        {
+          "expr": "avg(k6_http_req_duration_p50) * 1000",
+          "legendFormat": "p50",
+          "refId": "B"
+        },
+        {
+          "expr": "k6_vus",
+          "legendFormat": "Active VUs",
+          "refId": "C"
         }
       ]
     }
@@ -303,5 +427,5 @@
   "timezone": "",
   "title": "K6 Performance Test Results",
   "uid": "k6-performance-results",
-  "version": 1
+  "version": 2
 }
