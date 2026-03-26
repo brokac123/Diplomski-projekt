@@ -1,6 +1,6 @@
 # Diplomski Projekt — Booking API
 
-## Running the Project
+## Quick Start
 
 ### Start all services
 ```bash
@@ -12,27 +12,13 @@ docker compose up --build -d
 # Fresh seed (keeps existing data)
 docker compose exec api python seed_data.py
 
-# Reset and re-seed
+# Reset and re-seed (recommended before each test)
 docker compose exec api python seed_data.py --reset
-```
-
-### Run K6 tests (once implemented)
-```bash
-k6 run tests/load_test.js
-k6 run tests/stress_test.js
-k6 run tests/spike_test.js
-k6 run tests/soak_test.js
-k6 run tests/breakpoint_test.js
 ```
 
 ### Check service health
 ```bash
 docker compose ps
-```
-
-### View API logs
-```bash
-docker compose logs api
 ```
 
 ### Service URLs
@@ -41,4 +27,67 @@ docker compose logs api
 | API | http://localhost:8000 |
 | API Docs (Swagger) | http://localhost:8000/docs |
 | Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3000 |
+| Prometheus Targets | http://localhost:9090/targets |
+| Grafana | http://localhost:3000 (admin/admin) |
+
+---
+
+## Running Performance Tests
+
+### Run a test with Grafana visualization (PowerShell)
+```powershell
+docker compose exec api python seed_data.py --reset
+$env:K6_PROMETHEUS_RW_SERVER_URL="http://localhost:9090/api/v1/write"; $env:K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max"; k6 run --out experimental-prometheus-rw tests/<test_file>.js
+```
+
+### Run a test without Grafana (terminal results only)
+```bash
+k6 run tests/load_test.js
+```
+
+### Available tests
+| Test | File | Duration |
+|------|------|----------|
+| Baseline | `tests/baseline_test.js` | 30s |
+| Endpoint Benchmark | `tests/endpoint_benchmark_test.js` | ~6 min |
+| Load | `tests/load_test.js` | ~8 min |
+| Stress | `tests/stress_test.js` | ~8 min |
+| Spike | `tests/spike_test.js` | ~3.5 min |
+| Soak | `tests/soak_test.js` | ~32 min |
+| Breakpoint | `tests/breakpoint_test.js` | ~2-20 min |
+| Contention | `tests/contention_test.js` | 2 min |
+| Read vs Write | `tests/read_vs_write_test.js` | ~6 min |
+
+### After high-load tests (stress, spike, breakpoint)
+```bash
+docker compose restart api
+```
+
+---
+
+## Viewing Results in Grafana
+
+1. Open http://localhost:3000 (login: admin/admin)
+2. Go to Dashboards → K6 → **K6 Performance Test Results**
+3. Set time range to cover your test (e.g., "Last 15 minutes")
+4. Set auto-refresh to 5s for live monitoring
+
+---
+
+## 4-Worker Mode
+
+Uncomment the command line in `docker-compose.yml` under the `api` service:
+```yaml
+command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+```
+
+Then rebuild:
+```bash
+docker compose up --build -d
+```
+
+---
+
+## Documentation
+
+See [documentation.md](documentation.md) for full project documentation including test explanations, metrics rationale, and architecture details.
