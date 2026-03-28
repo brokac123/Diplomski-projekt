@@ -1,7 +1,7 @@
 import http from "k6/http";
 import { sleep, check } from "k6";
 import { Counter } from "k6/metrics";
-import { BASE_URL, JSON_HEADERS, randomUserId, randomEventId, randomBookingId, randomLocation } from "./helpers.js";
+import { BASE_URL, JSON_HEADERS, randomUserId, randomEventId, randomBookingId, randomLocation, checkApiHealth, saveSummary } from "./helpers.js";
 
 /**
  * READ vs WRITE TEST (Phase C)
@@ -25,7 +25,7 @@ export const options = {
       duration: "3m",
       startTime: "0s",
       exec: "readHeavyProfile",
-      tags: { scenario: "read_heavy" },
+      tags: { scenario: "read_heavy", testid: "read_vs_write" },
     },
     write_heavy: {
       executor: "constant-vus",
@@ -33,7 +33,7 @@ export const options = {
       duration: "3m",
       startTime: "190s",
       exec: "writeHeavyProfile",
-      tags: { scenario: "write_heavy" },
+      tags: { scenario: "write_heavy", testid: "read_vs_write" },
     },
   },
   thresholds: {
@@ -42,6 +42,9 @@ export const options = {
     http_req_failed: ["rate<0.05"],
   },
 };
+
+export function setup() { checkApiHealth(); }
+export function handleSummary(data) { return saveSummary(data, "read_vs_write_test"); }
 
 // --- Read-heavy: 90% reads, 10% writes ---
 export function readHeavyProfile() {

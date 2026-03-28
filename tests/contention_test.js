@@ -1,7 +1,7 @@
 import http from "k6/http";
 import { sleep, check } from "k6";
 import { Counter, Trend } from "k6/metrics";
-import { BASE_URL, JSON_HEADERS, randomUserId } from "./helpers.js";
+import { BASE_URL, JSON_HEADERS, randomUserId, checkApiHealth, saveSummary } from "./helpers.js";
 
 /**
  * CONTENTION TEST (Phase C)
@@ -27,11 +27,15 @@ const TARGET_EVENT_ID = 1;
 export const options = {
   vus: 50,
   duration: "2m",
+  tags: { testid: "contention" },
   thresholds: {
     contention_booking_latency: ["p(95)<3000"],
     http_req_failed: ["rate<0.05"],
   },
 };
+
+export function setup() { checkApiHealth(); }
+export function handleSummary(data) { return saveSummary(data, "contention_test"); }
 
 export default function () {
   let userId = randomUserId();

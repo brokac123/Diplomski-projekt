@@ -40,6 +40,8 @@ docker compose exec api python seed_data.py --reset
 $env:K6_PROMETHEUS_RW_SERVER_URL="http://localhost:9090/api/v1/write"; $env:K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max"; k6 run --out experimental-prometheus-rw tests/<test_file>.js
 ```
 
+Results are auto-saved to `results/1w/<test_name>.json`.
+
 ### Run a test without Grafana (terminal results only)
 ```bash
 k6 run tests/load_test.js
@@ -76,15 +78,23 @@ docker compose restart api
 
 ## 4-Worker Mode
 
-Uncomment the command line in `docker-compose.yml` under the `api` service:
+1. Uncomment the command line in `docker-compose.yml` under the `api` service:
 ```yaml
 command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
 ```
 
-Then rebuild:
+2. Rebuild and re-seed:
 ```bash
 docker compose up --build -d
+docker compose exec api python seed_data.py --reset
 ```
+
+3. Run tests with `-e WORKERS=4w` to save results separately:
+```powershell
+$env:K6_PROMETHEUS_RW_SERVER_URL="http://localhost:9090/api/v1/write"; $env:K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max"; k6 run --out experimental-prometheus-rw -e WORKERS=4w tests/<test_file>.js
+```
+
+Results are saved to `results/4w/<test_name>.json` (1-worker results stay in `results/1w/`).
 
 ---
 

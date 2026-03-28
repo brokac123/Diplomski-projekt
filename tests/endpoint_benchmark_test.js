@@ -1,6 +1,6 @@
 import http from "k6/http";
 import { sleep, check } from "k6";
-import { BASE_URL, JSON_HEADERS, randomUserId, randomEventId, randomBookingId, randomLocation } from "./helpers.js";
+import { BASE_URL, JSON_HEADERS, randomUserId, randomEventId, randomBookingId, randomLocation, checkApiHealth, saveSummary } from "./helpers.js";
 
 /**
  * ENDPOINT BENCHMARK TEST (Phase A)
@@ -20,7 +20,7 @@ export const options = {
       duration: SCENARIO_DURATION,
       startTime: "0s",
       exec: "lightReads",
-      tags: { scenario: "light_reads" },
+      tags: { scenario: "light_reads", testid: "endpoint_benchmark" },
     },
     list_reads: {
       executor: "constant-vus",
@@ -28,7 +28,7 @@ export const options = {
       duration: SCENARIO_DURATION,
       startTime: "70s",
       exec: "listReads",
-      tags: { scenario: "list_reads" },
+      tags: { scenario: "list_reads", testid: "endpoint_benchmark" },
     },
     search_filter: {
       executor: "constant-vus",
@@ -36,7 +36,7 @@ export const options = {
       duration: SCENARIO_DURATION,
       startTime: "140s",
       exec: "searchFilter",
-      tags: { scenario: "search_filter" },
+      tags: { scenario: "search_filter", testid: "endpoint_benchmark" },
     },
     writes: {
       executor: "constant-vus",
@@ -44,7 +44,7 @@ export const options = {
       duration: SCENARIO_DURATION,
       startTime: "210s",
       exec: "writes",
-      tags: { scenario: "writes" },
+      tags: { scenario: "writes", testid: "endpoint_benchmark" },
     },
     heavy_aggregations: {
       executor: "constant-vus",
@@ -52,7 +52,7 @@ export const options = {
       duration: SCENARIO_DURATION,
       startTime: "280s",
       exec: "heavyAggregations",
-      tags: { scenario: "heavy_aggregations" },
+      tags: { scenario: "heavy_aggregations", testid: "endpoint_benchmark" },
     },
   },
   thresholds: {
@@ -64,6 +64,9 @@ export const options = {
     http_req_failed: ["rate<0.05"],
   },
 };
+
+export function setup() { checkApiHealth(); }
+export function handleSummary(data) { return saveSummary(data, "endpoint_benchmark_test"); }
 
 // --- Scenario: Light Reads (PK lookups) ---
 export function lightReads() {

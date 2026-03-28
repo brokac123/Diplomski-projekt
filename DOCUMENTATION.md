@@ -179,6 +179,9 @@ tests/
 - Random ID generators for users (1-1000), events (1-100), bookings (1-2000)
 - Random location picker (8 Croatian cities)
 - Expected HTTP status codes (200, 404, 409)
+- `checkApiHealth()` — verifies API is alive before test starts (used in `setup()`)
+- `saveSummary(data, testName)` — saves terminal output + JSON results to `results/<workers>/<testName>.json`
+- `WORKERS` label — reads `-e WORKERS=` env var (default: `1w`) to organize results by worker config
 
 **realistic_test.js** exports a `trafficMix()` function that simulates realistic booking platform usage with weighted random selection:
 - 25% browse events, 15% view single event, 10% search events
@@ -368,6 +371,9 @@ docker compose exec api python seed_data.py --reset
 ```
 
 #### Step 2 — Run the test with Prometheus output
+
+**1-worker mode (default):**
+
 PowerShell:
 ```powershell
 $env:K6_PROMETHEUS_RW_SERVER_URL="http://localhost:9090/api/v1/write"; $env:K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max"; k6 run --out experimental-prometheus-rw tests/<test_file>.js
@@ -378,9 +384,24 @@ Git Bash:
 K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max" k6 run --out experimental-prometheus-rw tests/<test_file>.js
 ```
 
+**4-worker mode** — add `-e WORKERS=4w` so results are saved to `results/4w/`:
+
+PowerShell:
+```powershell
+$env:K6_PROMETHEUS_RW_SERVER_URL="http://localhost:9090/api/v1/write"; $env:K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max"; k6 run --out experimental-prometheus-rw -e WORKERS=4w tests/<test_file>.js
+```
+
+Git Bash:
+```bash
+K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max" k6 run --out experimental-prometheus-rw -e WORKERS=4w tests/<test_file>.js
+```
+
 The environment variables:
 - `K6_PROMETHEUS_RW_SERVER_URL` — tells K6 where to push metrics (Prometheus remote write endpoint)
 - `K6_PROMETHEUS_RW_TREND_STATS` — tells K6 which percentile gauges to send (default only sends p99)
+- `-e WORKERS=4w` — labels output files with worker config (default: `1w`). Results saved to `results/1w/` or `results/4w/`
+
+**Result files:** Each test auto-saves a JSON summary to `results/<workers>/<test_name>.json` (e.g., `results/1w/load_test.json`). Terminal output remains unchanged.
 
 #### Step 3 — View results in Grafana
 1. Open http://localhost:3000 → Dashboards → K6 → K6 Performance Test Results
@@ -459,6 +480,13 @@ docker compose up --build -d
 docker compose exec api python seed_data.py --reset
 ```
 
+When running tests in 4-worker mode, add `-e WORKERS=4w` to save results separately:
+```powershell
+$env:K6_PROMETHEUS_RW_SERVER_URL="http://localhost:9090/api/v1/write"; $env:K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max"; k6 run --out experimental-prometheus-rw -e WORKERS=4w tests/<test_file>.js
+```
+
+This saves JSON results to `results/4w/` instead of `results/1w/`, keeping both sets side-by-side for comparison.
+
 ### 10.3 What to Compare
 
 Re-run key tests with 4 workers and compare:
@@ -520,7 +548,9 @@ Diplomski projekt/
 │       └── dashboards/
 │           └── k6_results.json  # K6 Performance Test Results dashboard (13 panels)
 ├── results/
-│   └── 1_worker_results.md  # Test results with 1 Uvicorn worker
+│   ├── 1w/                   # Auto-saved JSON results for 1-worker tests
+│   ├── 4w/                   # Auto-saved JSON results for 4-worker tests
+│   └── 1_worker_results.md   # Test results with 1 Uvicorn worker
 ├── docker-compose.yml       # All services
 ├── Dockerfile               # Python container
 ├── seed_data.py             # Faker-based seeding (1000 users, 100 events, 2000 bookings)

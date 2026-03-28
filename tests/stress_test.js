@@ -1,5 +1,6 @@
 import { sleep } from "k6";
 import { trafficMix, bookingSuccess, bookingFail, bookingSoldOut } from "./realistic_test.js";
+import { checkApiHealth, saveSummary } from "./helpers.js";
 
 /**
  * STRESS TEST (Phase B)
@@ -20,11 +21,15 @@ export const options = {
     { duration: "2m", target: 300 },   // stress level
     { duration: "1m", target: 0 },     // ramp down
   ],
+  tags: { testid: "stress" },
   thresholds: {
     http_req_duration: ["p(95)<1500"],  // relaxed — we expect degradation
     http_req_failed: ["rate<0.10"],     // up to 10% errors acceptable at peak
   },
 };
+
+export function setup() { checkApiHealth(); }
+export function handleSummary(data) { return saveSummary(data, "stress_test"); }
 
 export default function () {
   trafficMix();

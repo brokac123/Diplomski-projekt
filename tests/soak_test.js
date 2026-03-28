@@ -1,5 +1,6 @@
 import { sleep } from "k6";
 import { trafficMix, bookingSuccess, bookingFail, bookingSoldOut } from "./realistic_test.js";
+import { checkApiHealth, saveSummary } from "./helpers.js";
 
 /**
  * SOAK TEST (Phase B)
@@ -23,11 +24,15 @@ export const options = {
     { duration: "30m", target: 30 },   // sustained load
     { duration: "1m", target: 0 },     // ramp down
   ],
+  tags: { testid: "soak" },
   thresholds: {
     http_req_duration: ["p(95)<700"],
     http_req_failed: ["rate<0.01"],
   },
 };
+
+export function setup() { checkApiHealth(); }
+export function handleSummary(data) { return saveSummary(data, "soak_test"); }
 
 export default function () {
   trafficMix();

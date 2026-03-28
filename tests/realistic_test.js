@@ -1,7 +1,7 @@
 import http from "k6/http";
 import { sleep, check } from "k6";
 import { Counter } from "k6/metrics";
-import { BASE_URL, JSON_HEADERS, randomUserId, randomEventId, randomBookingId, randomLocation } from "./helpers.js";
+import { BASE_URL, JSON_HEADERS, randomUserId, randomEventId, randomBookingId, randomLocation, checkApiHealth, saveSummary } from "./helpers.js";
 
 /**
  * REALISTIC TRAFFIC TEST
@@ -30,11 +30,15 @@ export const bookingSoldOut = new Counter("booking_sold_out");
 export const options = {
   vus: 20,
   duration: "1m",
+  tags: { testid: "realistic" },
   thresholds: {
     http_req_duration: ["p(95)<500", "p(99)<1000"],
     http_req_failed: ["rate<0.01"],
   },
 };
+
+export function setup() { checkApiHealth(); }
+export function handleSummary(data) { return saveSummary(data, "realistic_test"); }
 
 /**
  * Exported traffic function — reused by load, stress, spike, soak tests.

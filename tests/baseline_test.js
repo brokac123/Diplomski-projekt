@@ -1,6 +1,6 @@
 import http from "k6/http";
 import { sleep, check } from "k6";
-import { BASE_URL, randomUserId, randomEventId, randomBookingId, randomLocation } from "./helpers.js";
+import { BASE_URL, randomUserId, randomEventId, randomBookingId, randomLocation, checkApiHealth, saveSummary } from "./helpers.js";
 
 /**
  * BASELINE / SMOKE TEST
@@ -12,11 +12,15 @@ import { BASE_URL, randomUserId, randomEventId, randomBookingId, randomLocation 
 export const options = {
   vus: 10,
   duration: "30s",
+  tags: { testid: "baseline" },
   thresholds: {
     http_req_duration: ["p(95)<300"],
     http_req_failed: ["rate<0.01"],
   },
 };
+
+export function setup() { checkApiHealth(); }
+export function handleSummary(data) { return saveSummary(data, "baseline_test"); }
 
 export default function () {
   // --- Health ---
