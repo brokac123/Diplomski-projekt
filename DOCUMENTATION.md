@@ -282,7 +282,43 @@ API /metrics ──(scrape every 5s)──────────────�
 
 K6 pushes test metrics directly to Prometheus via remote write during test execution. Prometheus also scrapes the API and Node Exporter every 5 seconds. Grafana reads from Prometheus to display all metrics on one dashboard.
 
-### 8.3 Grafana Dashboard — "K6 Performance Test Results"
+### 8.3 How Metrics Are Collected — K6 Metric Types
+
+K6 internally tracks four types of metrics, each sent to Prometheus differently:
+
+| K6 Metric Type | Examples | How It's Sent to Prometheus |
+|----------------|----------|---------------------------|
+| **Counter** | `http_reqs`, `booking_success`, `booking_fail` | Sent automatically as cumulative totals (e.g., `k6_http_reqs_total`) |
+| **Rate** | `http_req_failed` | Sent automatically as a ratio 0-1 (e.g., `k6_http_req_failed_rate`) |
+| **Gauge** | `vus`, `vus_max` | Sent automatically as current value (e.g., `k6_vus`) |
+| **Trend** | `http_req_duration` | **Requires explicit configuration** — see below |
+
+**Counters, Rates, and Gauges** are sent automatically via Prometheus remote write — no extra configuration needed.
+
+**Trends** are the exception. A Trend collects every individual measurement (e.g., every request's response time) and K6 must decide which summary statistics to compute and send. By default, K6 only sends **p99**. The environment variable `K6_PROMETHEUS_RW_TREND_STATS` controls which stats are sent:
+
+```
+K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max"
+```
+
+This causes each Trend metric to generate multiple Prometheus gauges:
+- `k6_http_req_duration_p50`, `k6_http_req_duration_p90`, `k6_http_req_duration_p95`, `k6_http_req_duration_p99`
+- `k6_http_req_duration_avg`, `k6_http_req_duration_min`, `k6_http_req_duration_max`
+
+**Note:** K6 sends duration values in **seconds** (e.g., 0.076 = 76ms). The Grafana dashboard queries multiply by 1000 to display in milliseconds.
+
+### 8.4 Three Data Paths into Prometheus
+
+| Source | Transport | Frequency | Dashboard Panels |
+|--------|-----------|-----------|-----------------|
+| **K6** (test metrics) | Push via remote write | Real-time during test | VUs, RPS, Response Times, Error Rate, Booking Metrics |
+| **Node Exporter** (system metrics) | Pull via Prometheus scrape | Every 5 seconds | CPU Usage, Memory Usage |
+| **FastAPI /metrics** (app metrics) | Pull via Prometheus scrape | Every 5 seconds | Available but not used on dashboard (K6 metrics are more detailed) |
+
+All three paths feed into the same Prometheus instance. Grafana reads from that single Prometheus to display everything on one dashboard.
+
+### 8.5 Grafana Dashboard — "K6 Performance Test Results"
+
 
 Location: Dashboards → K6 → K6 Performance Test Results
 
@@ -320,7 +356,7 @@ The dashboard contains **13 panels** organized in 3 categories:
 
 **Note:** Node Exporter monitors the WSL2 VM (Docker's Linux layer on Windows), which is allocated half of host RAM by default. This accurately reflects the resources available to the API and PostgreSQL containers.
 
-### 8.4 Metrics Selection Rationale
+### 8.6 Metrics Selection Rationale
 
 The 13 panels cover the **three pillars of performance testing**:
 
