@@ -1,6 +1,8 @@
 import http from "k6/http";
 import { sleep, check } from "k6";
-import { BASE_URL, JSON_HEADERS, randomUserId, randomEventId, randomBookingId, randomLocation, checkApiHealth, saveSummary } from "./helpers.js";
+import { BASE_URL, JSON_HEADERS, randomUserId, randomEventId, randomBookingId, randomLocation, checkApiHealth, saveSummary, configureExpectedStatuses, randomSleep } from "./helpers.js";
+
+configureExpectedStatuses(200, 404, 409);
 
 /**
  * ENDPOINT BENCHMARK TEST (Phase A)
@@ -18,6 +20,7 @@ export const options = {
       executor: "constant-vus",
       vus: SCENARIO_VUS,
       duration: SCENARIO_DURATION,
+      gracefulStop: "30s",
       startTime: "0s",
       exec: "lightReads",
       tags: { scenario: "light_reads", testid: "endpoint_benchmark" },
@@ -26,6 +29,7 @@ export const options = {
       executor: "constant-vus",
       vus: SCENARIO_VUS,
       duration: SCENARIO_DURATION,
+      gracefulStop: "30s",
       startTime: "70s",
       exec: "listReads",
       tags: { scenario: "list_reads", testid: "endpoint_benchmark" },
@@ -34,6 +38,7 @@ export const options = {
       executor: "constant-vus",
       vus: SCENARIO_VUS,
       duration: SCENARIO_DURATION,
+      gracefulStop: "30s",
       startTime: "140s",
       exec: "searchFilter",
       tags: { scenario: "search_filter", testid: "endpoint_benchmark" },
@@ -42,6 +47,7 @@ export const options = {
       executor: "constant-vus",
       vus: SCENARIO_VUS,
       duration: SCENARIO_DURATION,
+      gracefulStop: "30s",
       startTime: "210s",
       exec: "writes",
       tags: { scenario: "writes", testid: "endpoint_benchmark" },
@@ -50,6 +56,7 @@ export const options = {
       executor: "constant-vus",
       vus: SCENARIO_VUS,
       duration: SCENARIO_DURATION,
+      gracefulStop: "30s",
       startTime: "280s",
       exec: "heavyAggregations",
       tags: { scenario: "heavy_aggregations", testid: "endpoint_benchmark" },
@@ -62,6 +69,7 @@ export const options = {
     "http_req_duration{scenario:writes}": ["p(95)<1000"],
     "http_req_duration{scenario:heavy_aggregations}": ["p(95)<1500"],
     http_req_failed: ["rate<0.05"],
+    checks: ["rate>0.95"],
   },
 };
 
@@ -85,7 +93,7 @@ export function lightReads() {
   let bookingRes = http.get(`${BASE_URL}/bookings/${bookingId}`, { tags: { name: "GetBooking" } });
   check(bookingRes, { "booking 200 or 404": (r) => r.status === 200 || r.status === 404 });
 
-  sleep(0.5);
+  sleep(randomSleep(0.3, 1.0));
 }
 
 // --- Scenario: List Reads (paginated queries) ---
@@ -99,7 +107,7 @@ export function listReads() {
   let bookingsRes = http.get(`${BASE_URL}/bookings/?limit=100`, { tags: { name: "ListBookings" } });
   check(bookingsRes, { "bookings 200": (r) => r.status === 200 });
 
-  sleep(0.5);
+  sleep(randomSleep(0.3, 1.0));
 }
 
 // --- Scenario: Search & Filter ---
@@ -119,7 +127,7 @@ export function searchFilter() {
   let eventBookingsRes = http.get(`${BASE_URL}/events/${eventId}/bookings?limit=50`, { tags: { name: "EventBookings" } });
   check(eventBookingsRes, { "event bookings 200": (r) => r.status === 200 });
 
-  sleep(0.5);
+  sleep(randomSleep(0.3, 1.0));
 }
 
 // --- Scenario: Writes (booking create + cancel) ---
@@ -146,7 +154,7 @@ export function writes() {
       r.status === 200 || r.status === 409 || r.status === 404,
   });
 
-  sleep(0.5);
+  sleep(randomSleep(0.3, 1.0));
 }
 
 // --- Scenario: Heavy Aggregations (JOINs, GROUP BY, subqueries) ---
@@ -161,5 +169,5 @@ export function heavyAggregations() {
   let globalRes = http.get(`${BASE_URL}/stats`, { tags: { name: "GlobalStats" } });
   check(globalRes, { "global stats 200": (r) => r.status === 200 });
 
-  sleep(0.5);
+  sleep(randomSleep(0.3, 1.0));
 }

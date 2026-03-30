@@ -17,7 +17,7 @@ This project is a master's thesis on **performance testing of web applications**
 |-----------|-----------|---------|
 | API | Python 3.11 + FastAPI | REST API server |
 | ASGI Server | Uvicorn | Serves FastAPI (1 or 4 workers) |
-| Database | PostgreSQL 15 | Persistent data storage |
+| Database | PostgreSQL 15 (tuned) | Persistent data storage |
 | ORM | SQLAlchemy | Database access layer |
 | Containerization | Docker + Docker Compose | Service orchestration |
 | Performance Testing | K6 | Load test execution |
@@ -149,7 +149,10 @@ SQLAlchemy is configured with `pool_size=10`, `max_overflow=20`, `pool_pre_ping=
 Deleting a user or event automatically cascades to their bookings via SQLAlchemy `cascade="all, delete-orphan"`.
 
 ### K6 Expected Response Codes
-K6 is configured via `http.setResponseCallback(http.expectedStatuses(200, 404, 409))` in `tests/helpers.js` to treat `404` and `409` as expected business responses rather than HTTP failures. Without this, sold-out events (409) and not-found lookups (404) would be counted as errors, skewing the `http_req_failed` metric.
+Each test configures its own expected HTTP status codes via `configureExpectedStatuses()` from `helpers.js`. For example, the baseline test only allows `200, 404` (strict — no conflict responses expected), while write-heavy tests allow `200, 404, 409`. This per-test approach catches real errors more accurately than a single global configuration.
+
+### Database Session Safety
+The `get_db()` dependency includes `db.rollback()` on exception to prevent dirty sessions from leaking back to the connection pool during concurrent failures under load.
 
 ---
 
@@ -178,7 +181,8 @@ tests/
 - `BASE_URL` — API base URL (`http://localhost:8000`)
 - Random ID generators for users (1-1000), events (1-100), bookings (1-2000)
 - Random location picker (8 Croatian cities)
-- Expected HTTP status codes (200, 404, 409)
+- `configureExpectedStatuses(...statuses)` — per-test HTTP status code validation
+- `randomSleep(min, max)` — variable think time between requests for realistic load modeling
 - `checkApiHealth()` — verifies API is alive before test starts (used in `setup()`)
 - `saveSummary(data, testName)` — saves terminal output + JSON results to `results/<workers>/<testName>.json`
 - `WORKERS` label — reads `-e WORKERS=` env var (default: `1w`) to organize results by worker config
@@ -322,7 +326,9 @@ All three paths feed into the same Prometheus instance. Grafana reads from that 
 
 Location: Dashboards → K6 → K6 Performance Test Results
 
-The dashboard contains **13 panels** organized in 3 categories:
+The dashboard includes a **testid** template variable that filters all K6 metric panels by test run, preventing data overlap between back-to-back tests.
+
+The dashboard contains **15 panels** organized in 4 categories:
 
 #### Application Performance Metrics (from K6)
 
@@ -346,6 +352,13 @@ The dashboard contains **13 panels** organized in 3 categories:
 | **HTTP Requests Total** | `k6_http_reqs_total` | Total request volume | Summary of test scope |
 | **Avg Response Time** | `k6_http_req_duration_avg` | Gauge showing current average | Quick at-a-glance health indicator |
 | **Peak VUs** | `max_over_time(k6_vus)` | Maximum concurrent users reached | Summary stat for test reports |
+
+#### Correlation Panels
+
+| Panel | Metric Source | What It Shows | Why It Matters |
+|-------|--------------|---------------|----------------|
+| **Per-Endpoint p95 Over Time** | `k6_http_req_duration_p95 by name` | Each endpoint's p95 latency as a time series | Shows exactly which endpoints degrade first as VUs increase — the most powerful thesis visualization |
+| **CPU Usage vs p95 Latency** | `node_cpu + k6_http_req_duration_p95 + k6_vus` | Dual-axis: CPU% (left) vs p95 latency + VUs (right) | Directly answers "is the bottleneck CPU-bound or DB-bound?" |
 
 #### System Resource Metrics (from Node Exporter)
 
@@ -494,20 +507,20 @@ This still shows full results in the terminal but won't push metrics to Grafana.
 
 ### 10.1 Purpose
 
-Compare API performance with **1 Uvicorn worker** (default) vs **4 Uvicorn workers** to analyze the impact of horizontal scaling within a single container. This is a key thesis comparison.
+Compare API performance across **1, 2, and 4 Uvicorn workers** to build a 3-point scaling curve. This shows whether the API scales linearly with workers and where DB contention becomes the bottleneck. This is a key thesis comparison.
 
 ### 10.2 Switching Between Configurations
 
 **1 worker (default):** No changes needed — the Dockerfile uses the default Uvicorn command.
 
-**4 workers:** Uncomment the command override in `docker-compose.yml`:
+**2 workers:** Uncomment the 2-worker command in `docker-compose.yml`:
 ```yaml
-api:
-  build: .
-  ports:
-    - "8000:8000"
-  # Uncomment the line below for 4-worker mode (thesis comparison):
-  command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+```
+
+**4 workers:** Uncomment the 4-worker command in `docker-compose.yml`:
+```yaml
+command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
 ```
 
 Then rebuild and restart:
@@ -535,21 +548,45 @@ Re-run key tests with 4 workers and compare:
 
 ---
 
-## 11. Key Technical Decisions
+## 11. Test Methodology & Infrastructure
 
-### Race Condition Prevention
-`POST /bookings/` and `PATCH /bookings/{id}/cancel` use `SELECT FOR UPDATE` (row-level locking) to prevent concurrent requests from overselling tickets. This is critical for correctness under load testing.
+### 11.1 Test Methodology Improvements
 
-### Connection Pooling
-SQLAlchemy is configured with `pool_size=10`, `max_overflow=20`, `pool_pre_ping=True` to handle concurrent load without exhausting database connections.
+Each test includes the following safeguards for reliable results:
+- **`gracefulStop: "30s"`** — gives in-flight requests time to complete instead of killing them, preventing artificial errors at test end
+- **`thresholds: { checks: ["rate>X"] }`** — ties functional check pass rates to test pass/fail criteria
+- **Per-test `configureExpectedStatuses()`** — strict HTTP status validation per test (e.g., baseline allows only 200/404, write tests allow 200/404/409)
+- **Variable think time `randomSleep(min, max)`** — realistic inter-request delays for normal-load tests (load, soak, realistic). Extreme tests (stress, spike) keep fixed sleep for maximum pressure
+- **Prometheus rate window `[5s]`** — captures spike bursts that `[30s]` averaging would smooth away
+- **`max()` instead of `avg()` for percentiles** — avoids statistically invalid averaging of per-endpoint percentiles
 
-### Proper HTTP Status Codes
-- `404` — resource not found (user, event, booking)
-- `400` — invalid input (e.g. reducing tickets below booked count)
-- `409 Conflict` — sold out event, or already cancelled booking
+### 11.5 Docker Resource Limits
 
-### Cascading Deletes
-Deleting a user or event automatically cascades to their bookings via SQLAlchemy `cascade="all, delete-orphan"`.
+All containers have explicit resource limits for reproducible test results:
+
+| Container | CPU Limit | Memory Limit | Purpose |
+|-----------|-----------|-------------|---------|
+| db | 2.0 | 1G | PostgreSQL — heaviest service |
+| api | 2.0 | 512M | FastAPI/Uvicorn workers |
+| prometheus | 0.5 | 512M | Metrics storage |
+| grafana | 0.5 | 256M | Dashboard rendering |
+| node-exporter | 0.25 | 128M | System metrics |
+
+### 11.6 PostgreSQL Tuning
+
+Explicit tuning parameters set via `docker-compose.yml` command to eliminate default configuration as a confounding variable:
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| `shared_buffers` | 256MB | Main data cache (default: 128MB) |
+| `work_mem` | 8MB | Per-operation sort/hash memory (default: 4MB) |
+| `max_connections` | 100 | Connection limit |
+| `effective_cache_size` | 512MB | Query planner hint for OS cache |
+
+### 11.7 Prometheus Configuration
+
+- **Retention:** 90 days (`--storage.tsdb.retention.time=90d`) — preserves data across all test phases
+- **Health check dependency:** Prometheus waits for API health check before starting, preventing initial metric gaps
 
 ---
 
@@ -582,9 +619,10 @@ Diplomski projekt/
 │       │   ├── datasources.yml  # Auto-configure Prometheus datasource
 │       │   └── dashboards.yml   # Auto-load dashboard files
 │       └── dashboards/
-│           └── k6_results.json  # K6 Performance Test Results dashboard (13 panels)
+│           └── k6_results.json  # K6 Performance Test Results dashboard (15 panels)
 ├── results/
 │   ├── 1w/                   # Auto-saved JSON results for 1-worker tests
+│   ├── 2w/                   # Auto-saved JSON results for 2-worker tests
 │   ├── 4w/                   # Auto-saved JSON results for 4-worker tests
 │   └── 1_worker_results.md   # Test results with 1 Uvicorn worker
 ├── docker-compose.yml       # All services
@@ -616,8 +654,8 @@ K6 → Prometheus remote write integration. Grafana dashboard with 13 panels cov
 ### Phase 5 — 1-Worker Test Execution ✅ DONE
 All 9 tests executed with 1 Uvicorn worker. Results documented in `results/1_worker_results.md`.
 
-### Phase 6 — 4-Worker Comparison 🔄 IN PROGRESS
-Re-run key tests with 4 Uvicorn workers. Compare results with 1-worker baseline.
+### Phase 6 — Multi-Worker Comparison 🔄 IN PROGRESS
+Re-run all tests with 1 worker (new methodology), then 2 workers, then 4 workers. Build 3-point scaling curve (1w → 2w → 4w).
 
 ### Phase 7 — Analysis & Thesis ⏳ PLANNED
 Analyze results, identify bottlenecks, draw conclusions, write thesis.

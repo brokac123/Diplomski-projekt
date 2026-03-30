@@ -7,6 +7,12 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c work_mem=8MB
+      -c max_connections=100
+      -c effective_cache_size=512MB
     ports:
       - "5432:5432"
     healthcheck:
@@ -14,6 +20,11 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
 
   api:
     build: .
@@ -21,7 +32,9 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=${DATABASE_URL}
-    # Uncomment the line below for 4-worker mode (thesis comparison):
+    # Uncomment the line below for 2-worker mode:
+    # command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+    # Uncomment the line below for 4-worker mode:
     # command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
     depends_on:
       db:
@@ -33,6 +46,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 512M
 
   prometheus:
     image: prom/prometheus
@@ -45,9 +63,16 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--web.enable-remote-write-receiver'
+      - '--storage.tsdb.retention.time=90d'
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
 
   grafana:
     image: grafana/grafana
@@ -61,12 +86,22 @@ services:
     depends_on:
       - prometheus
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
   node-exporter:
     image: prom/node-exporter
     ports:
       - "9100:9100"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
 
 volumes:
   postgres_data:

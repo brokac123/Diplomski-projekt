@@ -1,6 +1,8 @@
 import { sleep } from "k6";
 import { trafficMix, bookingSuccess, bookingFail, bookingSoldOut } from "./realistic_test.js";
-import { checkApiHealth, saveSummary } from "./helpers.js";
+import { checkApiHealth, saveSummary, configureExpectedStatuses, randomSleep } from "./helpers.js";
+
+configureExpectedStatuses(200, 404, 409);
 
 /**
  * SOAK TEST (Phase B)
@@ -24,10 +26,12 @@ export const options = {
     { duration: "30m", target: 30 },   // sustained load
     { duration: "1m", target: 0 },     // ramp down
   ],
+  gracefulStop: "30s",
   tags: { testid: "soak" },
   thresholds: {
     http_req_duration: ["p(95)<700"],
     http_req_failed: ["rate<0.01"],
+    checks: ["rate>0.95"],
   },
 };
 
@@ -36,5 +40,5 @@ export function handleSummary(data) { return saveSummary(data, "soak_test"); }
 
 export default function () {
   trafficMix();
-  sleep(1);
+  sleep(randomSleep(0.5, 2.0));
 }

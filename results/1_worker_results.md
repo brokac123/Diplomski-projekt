@@ -303,7 +303,7 @@ The soak test answers three critical questions:
 
 1. **Memory leaks?** No. Memory usage was flat for 32 minutes. The FastAPI application, SQLAlchemy ORM, and PostgreSQL connection pool all handle long-running operation without accumulating leaked objects.
 
-2. **Connection pool exhaustion?** No. With `pool_size=5` and `max_overflow=10` (15 total connections), the pool handled 30 VUs continuously for 30 minutes without running out of connections. This validates that connections are properly returned to the pool after each request.
+2. **Connection pool exhaustion?** No. With `pool_size=10` and `max_overflow=20` (30 total connections), the pool handled 30 VUs continuously for 30 minutes without running out of connections. This validates that connections are properly returned to the pool after each request.
 
 3. **Latency creep?** No. p(95) stayed at 43ms from minute 1 to minute 32. Some systems show gradual latency increase due to table bloat, index fragmentation, or GC pressure — none of these are present here.
 

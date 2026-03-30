@@ -1,6 +1,8 @@
 import http from "k6/http";
 import { sleep, check } from "k6";
-import { BASE_URL, randomUserId, randomEventId, randomBookingId, randomLocation, checkApiHealth, saveSummary } from "./helpers.js";
+import { BASE_URL, randomUserId, randomEventId, randomBookingId, randomLocation, checkApiHealth, saveSummary, configureExpectedStatuses, randomSleep } from "./helpers.js";
+
+configureExpectedStatuses(200, 404);
 
 /**
  * BASELINE / SMOKE TEST
@@ -12,10 +14,12 @@ import { BASE_URL, randomUserId, randomEventId, randomBookingId, randomLocation,
 export const options = {
   vus: 10,
   duration: "30s",
+  gracefulStop: "30s",
   tags: { testid: "baseline" },
   thresholds: {
     http_req_duration: ["p(95)<300"],
     http_req_failed: ["rate<0.01"],
+    checks: ["rate>0.99"],
   },
 };
 
@@ -107,5 +111,5 @@ export default function () {
     "global stats has fields": (r) => r.json().total_users !== undefined,
   });
 
-  sleep(1);
+  sleep(randomSleep(0.5, 2.0));
 }

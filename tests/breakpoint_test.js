@@ -1,6 +1,8 @@
 import { sleep } from "k6";
 import { trafficMix, bookingSuccess, bookingFail, bookingSoldOut } from "./realistic_test.js";
-import { checkApiHealth, saveSummary } from "./helpers.js";
+import { checkApiHealth, saveSummary, configureExpectedStatuses } from "./helpers.js";
+
+configureExpectedStatuses(200, 404, 409);
 
 /**
  * BREAKPOINT / CAPACITY TEST (Phase B)
@@ -28,6 +30,7 @@ export const options = {
       timeUnit: "1s",
       preAllocatedVUs: 50,
       maxVUs: 500,
+      gracefulStop: "30s",
       tags: { testid: "breakpoint" },
       stages: [
         { duration: "5m", target: 50 },    // warm up: 10→50 RPS
@@ -41,6 +44,7 @@ export const options = {
   // We WANT to see where it breaks.
   thresholds: {
     http_req_duration: [{ threshold: "p(95)<5000", abortOnFail: true }],
+    checks: ["rate>0.80"],
   },
 };
 

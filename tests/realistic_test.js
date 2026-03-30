@@ -1,7 +1,9 @@
 import http from "k6/http";
 import { sleep, check } from "k6";
 import { Counter } from "k6/metrics";
-import { BASE_URL, JSON_HEADERS, randomUserId, randomEventId, randomBookingId, randomLocation, checkApiHealth, saveSummary } from "./helpers.js";
+import { BASE_URL, JSON_HEADERS, randomUserId, randomEventId, randomBookingId, randomLocation, checkApiHealth, saveSummary, configureExpectedStatuses, randomSleep } from "./helpers.js";
+
+configureExpectedStatuses(200, 404, 409);
 
 /**
  * REALISTIC TRAFFIC TEST
@@ -30,10 +32,12 @@ export const bookingSoldOut = new Counter("booking_sold_out");
 export const options = {
   vus: 20,
   duration: "1m",
+  gracefulStop: "30s",
   tags: { testid: "realistic" },
   thresholds: {
     http_req_duration: ["p(95)<500", "p(99)<1000"],
     http_req_failed: ["rate<0.01"],
+    checks: ["rate>0.95"],
   },
 };
 
@@ -132,5 +136,5 @@ export function trafficMix() {
 // Default function for standalone execution
 export default function () {
   trafficMix();
-  sleep(1);
+  sleep(randomSleep(0.5, 2.0));
 }

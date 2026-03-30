@@ -1,11 +1,17 @@
 import http from "k6/http";
 import { textSummary } from "https://jslib.k6.io/k6-summary/0.0.1/index.js";
 
-// Tell K6 that 404 and 409 are expected business responses, not errors.
-// Without this, http_req_failed counts sold-out (409) and not-found (404) as failures.
-http.setResponseCallback(http.expectedStatuses(200, 404, 409));
-
 export const BASE_URL = "http://localhost:8000";
+
+// Per-test response callback configuration — call at module level in each test file.
+export function configureExpectedStatuses(...statuses) {
+  http.setResponseCallback(http.expectedStatuses(...statuses));
+}
+
+// Variable think time for realistic workload modeling.
+export function randomSleep(min = 0.5, max = 2.0) {
+  return min + Math.random() * (max - min);
+}
 
 export const JSON_HEADERS = {
   headers: { "Content-Type": "application/json" },

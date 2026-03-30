@@ -1,7 +1,9 @@
 import http from "k6/http";
 import { sleep, check } from "k6";
 import { Counter } from "k6/metrics";
-import { BASE_URL, JSON_HEADERS, randomUserId, randomEventId, randomBookingId, randomLocation, checkApiHealth, saveSummary } from "./helpers.js";
+import { BASE_URL, JSON_HEADERS, randomUserId, randomEventId, randomBookingId, randomLocation, checkApiHealth, saveSummary, configureExpectedStatuses, randomSleep } from "./helpers.js";
+
+configureExpectedStatuses(200, 404, 409);
 
 /**
  * READ vs WRITE TEST (Phase C)
@@ -23,6 +25,7 @@ export const options = {
       executor: "constant-vus",
       vus: 30,
       duration: "3m",
+      gracefulStop: "30s",
       startTime: "0s",
       exec: "readHeavyProfile",
       tags: { scenario: "read_heavy", testid: "read_vs_write" },
@@ -31,6 +34,7 @@ export const options = {
       executor: "constant-vus",
       vus: 30,
       duration: "3m",
+      gracefulStop: "30s",
       startTime: "190s",
       exec: "writeHeavyProfile",
       tags: { scenario: "write_heavy", testid: "read_vs_write" },
@@ -40,6 +44,7 @@ export const options = {
     "http_req_duration{scenario:read_heavy}": ["p(95)<500"],
     "http_req_duration{scenario:write_heavy}": ["p(95)<1500"],
     http_req_failed: ["rate<0.05"],
+    checks: ["rate>0.95"],
   },
 };
 
@@ -80,7 +85,7 @@ export function readHeavyProfile() {
     check(res, { "booking ok": (r) => r.status === 200 || r.status === 409 });
   }
 
-  sleep(0.5);
+  sleep(randomSleep(0.3, 1.0));
 }
 
 // --- Write-heavy: 40% reads, 60% writes ---
@@ -114,5 +119,5 @@ export function writeHeavyProfile() {
     check(res, { "cancel ok": (r) => r.status === 200 || r.status === 409 || r.status === 404 });
   }
 
-  sleep(0.5);
+  sleep(randomSleep(0.3, 1.0));
 }
