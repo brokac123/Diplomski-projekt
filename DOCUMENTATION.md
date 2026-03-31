@@ -371,7 +371,7 @@ The dashboard contains **15 panels** organized in 4 categories:
 
 ### 8.6 Metrics Selection Rationale
 
-The 13 panels cover the **three pillars of performance testing**:
+The 15 panels cover the **three pillars of performance testing**:
 
 1. **How fast?** — Response time percentiles, avg, per-endpoint breakdown
 2. **How reliable?** — Error rate, booking success/fail/sold-out
@@ -411,44 +411,43 @@ Service URLs to verify:
 
 ### 9.2 Test Execution Workflow
 
-**For each test, follow these steps:**
+#### Recommended: Automated test runner
 
-#### Step 1 — Re-seed the database
-Re-seed before each test to ensure consistent starting conditions (1000 users, 100 events, 2000 bookings):
+Run all tests for the current worker configuration (reads `WORKERS` from `.env`):
+
+Git Bash:
+```bash
+./run_tests.sh
+```
+
+PowerShell (VS Code terminal):
+```powershell
+& "C:\Program Files\Git\bin\bash.exe" ./run_tests.sh
+```
+
+Or run specific tests:
+```bash
+./run_tests.sh baseline load stress
+```
+
+The script automatically handles re-seeding, API restarts after crashes, 30-second cool-downs between tests, and saves results to `results/<workers>/`.
+
+#### Alternative: Run tests manually
+
+**Step 1 — Re-seed the database:**
 ```bash
 docker compose exec api python seed_data.py --reset
 ```
 
-#### Step 2 — Run the test with Prometheus output
-
-**1-worker mode (default):**
-
-PowerShell:
+**Step 2 — Run the test with Prometheus output (PowerShell):**
 ```powershell
 $env:K6_PROMETHEUS_RW_SERVER_URL="http://localhost:9090/api/v1/write"; $env:K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max"; k6 run --out experimental-prometheus-rw tests/<test_file>.js
-```
-
-Git Bash:
-```bash
-K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max" k6 run --out experimental-prometheus-rw tests/<test_file>.js
-```
-
-**4-worker mode** — add `-e WORKERS=4w` so results are saved to `results/4w/`:
-
-PowerShell:
-```powershell
-$env:K6_PROMETHEUS_RW_SERVER_URL="http://localhost:9090/api/v1/write"; $env:K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max"; k6 run --out experimental-prometheus-rw -e WORKERS=4w tests/<test_file>.js
-```
-
-Git Bash:
-```bash
-K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max" k6 run --out experimental-prometheus-rw -e WORKERS=4w tests/<test_file>.js
 ```
 
 The environment variables:
 - `K6_PROMETHEUS_RW_SERVER_URL` — tells K6 where to push metrics (Prometheus remote write endpoint)
 - `K6_PROMETHEUS_RW_TREND_STATS` — tells K6 which percentile gauges to send (default only sends p99)
-- `-e WORKERS=4w` — labels output files with worker config (default: `1w`). Results saved to `results/1w/` or `results/4w/`
+- `-e WORKERS=2w` — labels output files with worker config (default: `1w`). Results saved to `results/1w/`, `results/2w/`, or `results/4w/`
 
 **Result files:** Each test auto-saves a JSON summary to `results/<workers>/<test_name>.json` (e.g., `results/1w/load_test.json`). Terminal output remains unchanged.
 
@@ -511,30 +510,37 @@ Compare API performance across **1, 2, and 4 Uvicorn workers** to build a 3-poin
 
 ### 10.2 Switching Between Configurations
 
-**1 worker (default):** No changes needed — the Dockerfile uses the default Uvicorn command.
-
-**2 workers:** Uncomment the 2-worker command in `docker-compose.yml`:
-```yaml
-command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+Edit the `WORKERS` variable in `.env`:
+```
+WORKERS=1    # or 2, or 4
 ```
 
-**4 workers:** Uncomment the 4-worker command in `docker-compose.yml`:
-```yaml
-command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
-```
-
-Then rebuild and restart:
+Then restart (no rebuild needed):
 ```bash
-docker compose up --build -d
+docker compose up -d
 docker compose exec api python seed_data.py --reset
 ```
 
-When running tests in 4-worker mode, add `-e WORKERS=4w` to save results separately:
-```powershell
-$env:K6_PROMETHEUS_RW_SERVER_URL="http://localhost:9090/api/v1/write"; $env:K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max"; k6 run --out experimental-prometheus-rw -e WORKERS=4w tests/<test_file>.js
+The `docker-compose.yml` reads `${WORKERS:-1}` directly, so no commenting/uncommenting lines is needed.
+
+### 10.3 Automated Test Runner
+
+Run all tests for the current worker configuration:
+```bash
+./run_tests.sh
 ```
 
-This saves JSON results to `results/4w/` instead of `results/1w/`, keeping both sets side-by-side for comparison.
+Or run specific tests:
+```bash
+./run_tests.sh baseline load stress
+```
+
+The script automatically:
+- Reads `WORKERS` from `.env`
+- Re-seeds the database before each test
+- Restarts the API after tests that may crash it (stress, spike, breakpoint)
+- Adds a 30-second cool-down between tests
+- Saves results to `results/1w/`, `results/2w/`, or `results/4w/`
 
 ### 10.3 What to Compare
 
@@ -567,8 +573,8 @@ All containers have explicit resource limits for reproducible test results:
 | Container | CPU Limit | Memory Limit | Purpose |
 |-----------|-----------|-------------|---------|
 | db | 2.0 | 1G | PostgreSQL — heaviest service |
-| api | 2.0 | 512M | FastAPI/Uvicorn workers |
-| prometheus | 0.5 | 512M | Metrics storage |
+| api | 2.0 | 1G | FastAPI/Uvicorn (needs headroom for 4 workers) |
+| prometheus | 1.0 | 512M | Metrics storage (handles heavy remote write) |
 | grafana | 0.5 | 256M | Dashboard rendering |
 | node-exporter | 0.25 | 128M | System metrics |
 
@@ -629,8 +635,10 @@ Diplomski projekt/
 ├── Dockerfile               # Python container
 ├── seed_data.py             # Faker-based seeding (1000 users, 100 events, 2000 bookings)
 ├── requirements.txt         # Python dependencies
-├── .env                     # Environment variables
+├── .env                     # Environment variables (WORKERS=1, DB credentials)
+├── .env.example             # Template for .env (committed to git)
 ├── .dockerignore            # Docker build exclusions
+├── run_tests.sh             # Automated test runner (re-seed, restart, cool-down)
 ├── documentation.md         # This file
 └── README.md                # Quick start guide
 ```

@@ -1,7 +1,8 @@
 import http from "k6/http";
 import { textSummary } from "https://jslib.k6.io/k6-summary/0.0.1/index.js";
 
-export const BASE_URL = "http://localhost:8000";
+// Configurable via: k6 run -e BASE_URL=http://remote-server:8000 tests/load_test.js
+export const BASE_URL = __ENV.BASE_URL || "http://localhost:8000";
 
 // Per-test response callback configuration — call at module level in each test file.
 export function configureExpectedStatuses(...statuses) {

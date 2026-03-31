@@ -1,24 +1,21 @@
-# Diplomski Projekt — Booking API
+# Diplomski Projekt — Performance Testing of a REST API
 
 ## Quick Start
 
-### Start all services
+### 1. Configure environment
+```bash
+cp .env.example .env    # edit WORKERS=1 (or 2, 4) as needed
+```
+
+### 2. Start all services
 ```bash
 docker compose up --build -d
+docker compose ps       # verify all services are healthy
 ```
 
-### Seed the database
+### 3. Seed the database
 ```bash
-# Fresh seed (keeps existing data)
-docker compose exec api python seed_data.py
-
-# Reset and re-seed (recommended before each test)
 docker compose exec api python seed_data.py --reset
-```
-
-### Check service health
-```bash
-docker compose ps
 ```
 
 ### Service URLs
@@ -27,24 +24,36 @@ docker compose ps
 | API | http://localhost:8000 |
 | API Docs (Swagger) | http://localhost:8000/docs |
 | Prometheus | http://localhost:9090 |
-| Prometheus Targets | http://localhost:9090/targets |
 | Grafana | http://localhost:3000 (admin/admin) |
 
 ---
 
 ## Running Performance Tests
 
-### Run a test with Grafana visualization (PowerShell)
-```powershell
-docker compose exec api python seed_data.py --reset
-$env:K6_PROMETHEUS_RW_SERVER_URL="http://localhost:9090/api/v1/write"; $env:K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max"; k6 run --out experimental-prometheus-rw tests/<test_file>.js
+### Run all tests (recommended)
+Git Bash:
+```bash
+./run_tests.sh
 ```
 
-Results are auto-saved to `results/1w/<test_name>.json`.
+PowerShell (VS Code terminal):
+```powershell
+& "C:\Program Files\Git\bin\bash.exe" ./run_tests.sh
+```
 
-### Run a test without Grafana (terminal results only)
+This automatically handles re-seeding, API restarts after crashes, cool-down periods, and result saving.
+
+### Run specific tests
 ```bash
-k6 run tests/load_test.js
+./run_tests.sh baseline load stress
+```
+
+### Run a single test manually (PowerShell)
+```powershell
+docker compose exec api python seed_data.py --reset
+$env:K6_PROMETHEUS_RW_SERVER_URL="http://localhost:9090/api/v1/write"
+$env:K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max"
+k6 run --out experimental-prometheus-rw tests/load_test.js
 ```
 
 ### Available tests
@@ -56,14 +65,30 @@ k6 run tests/load_test.js
 | Stress | `tests/stress_test.js` | ~8 min |
 | Spike | `tests/spike_test.js` | ~3.5 min |
 | Soak | `tests/soak_test.js` | ~32 min |
-| Breakpoint | `tests/breakpoint_test.js` | ~2-20 min |
+| Breakpoint | `tests/breakpoint_test.js` | ~20 min |
 | Contention | `tests/contention_test.js` | 2 min |
 | Read vs Write | `tests/read_vs_write_test.js` | ~6 min |
 
-### After high-load tests (stress, spike, breakpoint)
-```bash
-docker compose restart api
+---
+
+## Switching Worker Configurations
+
+Edit `.env`:
 ```
+WORKERS=4
+```
+
+Then restart (no rebuild needed):
+```bash
+docker compose up -d
+```
+
+Run tests for that configuration:
+```bash
+./run_tests.sh
+```
+
+Results are automatically saved to `results/1w/`, `results/2w/`, or `results/4w/`.
 
 ---
 
@@ -71,33 +96,36 @@ docker compose restart api
 
 1. Open http://localhost:3000 (login: admin/admin)
 2. Go to Dashboards → K6 → **K6 Performance Test Results**
-3. Set time range to cover your test (e.g., "Last 15 minutes")
-4. Set auto-refresh to 5s for live monitoring
+3. Use the **testid** dropdown to filter by test type
+4. Set time range to cover your test duration
 
 ---
 
-## 4-Worker Mode
+## Remote Server Testing
 
-1. Uncomment the command line in `docker-compose.yml` under the `api` service:
-```yaml
-command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
-```
-
-2. Rebuild and re-seed:
+To test against a remote API:
 ```bash
-docker compose up --build -d
-docker compose exec api python seed_data.py --reset
+k6 run -e BASE_URL=http://your-server:8000 tests/load_test.js
 ```
 
-3. Run tests with `-e WORKERS=4w` to save results separately:
-```powershell
-$env:K6_PROMETHEUS_RW_SERVER_URL="http://localhost:9090/api/v1/write"; $env:K6_PROMETHEUS_RW_TREND_STATS="p(50),p(90),p(95),p(99),avg,min,max"; k6 run --out experimental-prometheus-rw -e WORKERS=4w tests/<test_file>.js
-```
+---
 
-Results are saved to `results/4w/<test_name>.json` (1-worker results stay in `results/1w/`).
+## Resource Limits
+
+All containers have fixed resource limits to ensure reproducible results:
+
+| Service | CPU | Memory |
+|---------|-----|--------|
+| API | 2.0 | 1 GB |
+| PostgreSQL | 2.0 | 1 GB |
+| Prometheus | 1.0 | 512 MB |
+| Grafana | 0.5 | 256 MB |
+| Node Exporter | 0.25 | 128 MB |
+
+These limits stay **constant** across all worker configurations (1w, 2w, 4w). Only the `WORKERS` variable changes.
 
 ---
 
 ## Documentation
 
-See [documentation.md](documentation.md) for full project documentation including test explanations, metrics rationale, and architecture details.
+See [DOCUMENTATION.md](DOCUMENTATION.md) for full project documentation.
