@@ -7,8 +7,9 @@ configureExpectedStatuses(200, 404, 409);
 /**
  * ENDPOINT BENCHMARK TEST (Phase A)
  * Purpose: Isolate each endpoint category under controlled load.
- * Each scenario runs sequentially (via startTime offset) so they don't interfere.
- * Produces per-scenario metrics for the thesis comparison table.
+ * Each scenario runs sequentially (via startTime offset with 100s gaps) to prevent
+ * overlap even with 30s gracefulStop. Produces per-scenario metrics for comparison.
+ * Duration: ~8.5 minutes total (5 x 60s scenarios + gaps).
  */
 
 const SCENARIO_DURATION = "1m";
@@ -30,7 +31,7 @@ export const options = {
       vus: SCENARIO_VUS,
       duration: SCENARIO_DURATION,
       gracefulStop: "30s",
-      startTime: "70s",
+      startTime: "100s",
       exec: "listReads",
       tags: { scenario: "list_reads", testid: "endpoint_benchmark" },
     },
@@ -39,7 +40,7 @@ export const options = {
       vus: SCENARIO_VUS,
       duration: SCENARIO_DURATION,
       gracefulStop: "30s",
-      startTime: "140s",
+      startTime: "200s",
       exec: "searchFilter",
       tags: { scenario: "search_filter", testid: "endpoint_benchmark" },
     },
@@ -48,7 +49,7 @@ export const options = {
       vus: SCENARIO_VUS,
       duration: SCENARIO_DURATION,
       gracefulStop: "30s",
-      startTime: "210s",
+      startTime: "300s",
       exec: "writes",
       tags: { scenario: "writes", testid: "endpoint_benchmark" },
     },
@@ -57,7 +58,7 @@ export const options = {
       vus: SCENARIO_VUS,
       duration: SCENARIO_DURATION,
       gracefulStop: "30s",
-      startTime: "280s",
+      startTime: "400s",
       exec: "heavyAggregations",
       tags: { scenario: "heavy_aggregations", testid: "endpoint_benchmark" },
     },

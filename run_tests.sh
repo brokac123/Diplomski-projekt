@@ -31,13 +31,14 @@ ALL_TESTS=(
   breakpoint
   contention
   read_vs_write
+  recovery
 )
 
 # Tests that need re-seeding before running
-NEEDS_RESEED=(baseline endpoint_benchmark load stress spike soak breakpoint contention read_vs_write)
+NEEDS_RESEED=(baseline endpoint_benchmark load stress spike soak breakpoint contention read_vs_write recovery)
 
 # Tests that may crash the API (need restart + health check after)
-MAY_CRASH=(stress spike breakpoint)
+MAY_CRASH=(stress spike breakpoint recovery)
 
 # Map test names to files
 declare -A TEST_FILES
@@ -50,6 +51,7 @@ TEST_FILES[soak]="tests/soak_test.js"
 TEST_FILES[breakpoint]="tests/breakpoint_test.js"
 TEST_FILES[contention]="tests/contention_test.js"
 TEST_FILES[read_vs_write]="tests/read_vs_write_test.js"
+TEST_FILES[recovery]="tests/recovery_test.js"
 
 # --- Helper Functions ---
 
