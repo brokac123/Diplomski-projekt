@@ -1,6 +1,6 @@
 # K6 Performance Test Results — 4 Uvicorn Workers
 
-**Date:** 2026-04-04
+**Date:** Run 1: 2026-04-04, Run 2: 2026-04-05
 **Configuration:** Docker (FastAPI + PostgreSQL), 4 Uvicorn workers
 **Seed data:** 1,000 users, 100 events, 2,000 bookings (re-seeded before each test via `run_tests.sh`)
 **Monitoring:** K6 → Prometheus remote write → Grafana dashboard (live visualization)
@@ -11,26 +11,52 @@
 
 ---
 
-## Summary Table
+## Multi-Run Summary Table
 
-| Test | Type | VUs | Duration | p(95) | Median | Avg | Error Rate | RPS | Status |
-|------|------|-----|----------|-------|--------|-----|------------|-----|--------|
-| Baseline | Smoke | 10 | 32s | 78ms | 61ms | 59ms | 0% | 64 | PASS |
-| Endpoint Benchmark | Isolation | 20 | ~7.7min | 41–80ms* | — | 35ms | 0% | 54 | PASS |
-| Load | Normal load | 50 | 8min | 31ms | 17ms | 19ms | 0% | 32 | PASS |
-| Stress | Overload | 300 | 8.3min | 1,895ms | 270ms | 723ms | 1.97% | 111 | **FAIL** |
-| Spike | Burst | 300 | 3.5min | 44ms | 19ms | 86ms | 0.06% | 8 | PASS |
-| Soak | Endurance | 30 | 48min* | 34ms | 17ms | 19ms | 0% | 15 | PASS |
-| Breakpoint | Capacity | 50 | ~45min | 31ms | 17ms | 18ms | 0% | 10 | PASS |
-| Contention | Locking | 50 | 2min | 25ms | 11ms | 15ms | 0% | 137 | PASS |
-| Read vs Write (read) | Traffic profile | 30 | 6.2min | 38ms | 20ms | 22ms | 0% | ~43 | PASS |
-| Read vs Write (write) | Traffic profile | 30 | 6.2min | 32ms | 15ms | 18ms | 0% | ~43 | PASS |
-| Recovery | Recovery | 300 | 6.2min | 2,450ms | 24ms | 405ms | 1.20% | 62 | PASS |
+| Test | Type | VUs | R1 p(95) | R2 p(95) | R1 Errors | R2 Errors | R1 RPS | R2 RPS | Status |
+|------|------|-----|----------|----------|-----------|-----------|--------|--------|--------|
+| Baseline | Smoke | 10 | 78ms | 72ms | 0% | 0% | 64 | 69 | PASS |
+| Endpoint Benchmark | Isolation | 20 | 41–80ms | 34–75ms | 0% | 0% | 54 | 55 | PASS |
+| Load | Normal load | 50 | 31ms | 30ms | 0% | 0% | 32 | 32 | PASS |
+| Stress | Overload | 300 | 1,895ms | 1,691ms | 1.97% | 1.39% | 111 | 110 | **FAIL** (consistent) |
+| Spike | Burst | 300 | 44ms | **3,412ms** | 0.06% | **2.60%** | 8 | 42 | **INCONSISTENT** (R1 PASS, R2 FAIL) |
+| Soak | Endurance | 30 | 34ms | 29ms | 0% | 0% | 15 | 23 | PASS |
+| Breakpoint | Capacity | 500 | 31ms† | 1,890ms | 0% | 4.15% | 10 | 99 | PASS (but different configs†) |
+| Contention | Locking | 50 | 25ms | 30ms | 0% | 0% | 137 | 137 | PASS |
+| Read vs Write (read) | Traffic profile | 30 | 38ms | 32ms | 0% | 0% | ~43 | ~43 | PASS |
+| Read vs Write (write) | Traffic profile | 30 | 32ms | 30ms | 0% | 0% | ~43 | ~43 | PASS |
+| Recovery | Recovery | 300 | 2,450ms | 1,598ms | 1.20% | 1.43% | 62 | 57 | PASS |
 
-**Overall: 9 passed, 1 failed (stress). Breakpoint now passes — first configuration to do so. Stress test regressed due to CPU-to-worker ratio.**
+†Run 1 breakpoint used maxVUs=50 (different from standard maxVUs=500). Run 2 uses the standard maxVUs=500 config matching 1w/2w tests.
 
-*Endpoint benchmark: list reads 41ms, search 60ms, writes 72ms, heavy aggregations 79ms, light reads 80ms. All 5 scenarios PASS.
-*Soak test extended to 48 min due to a single stuck iteration (16.7 min); all other metrics clean.
+**Overall: Stress consistently FAIL. Spike inconsistent (R1 PASS, R2 FAIL). All other tests PASS.**
+
+---
+
+## Multi-Run Variability Analysis
+
+### Stable Results (consistent across runs)
+- **Load test:** p(95) 30–31ms, 0% errors, 32 RPS. Identical.
+- **Stress test:** Both runs FAIL (p95=1,691–1,895ms > 1,500ms threshold). Consistent ~110 RPS, ~1.5% errors.
+- **Soak test:** p(95) 29–34ms, 0% errors. Consistent.
+- **Contention test:** Booking p(95) 25–30ms, 0% errors, 137 RPS. Very consistent.
+- **Read vs Write:** Read p95 32–38ms, write p95 30–32ms. Consistent.
+- **Recovery test:** Both PASS (p95=1,598–2,450ms < 10,000ms). Run 2 better p95 but worse max (60s vs 6s).
+
+### Critical Inconsistency
+
+**Spike test (R1: PASS, R2: FAIL):** Run 1 showed p95=44ms — the system "barely noticed" the 300 VU burst, making it the best result across all configurations. Run 2 shows p95=3,412ms and 2.60% errors — a FAIL. **This is the same spike inconsistency seen with 2 workers.** The spike test is inherently noisy for multi-worker configurations.
+
+### Configuration Change: Breakpoint Test
+
+Run 1 used maxVUs=50 (allowing only 50 concurrent VUs, easy for 4 workers to handle). Run 2 uses the standard maxVUs=500, matching 1w/2w configurations. Both PASS the p95<5000ms threshold:
+- Run 1: p95=31ms, 0% errors (but trivially easy with maxVUs=50)
+- Run 2: p95=1,890ms, 4.15% errors, 104K dropped iterations (real test)
+
+**Run 2 is the correct comparison point** for cross-configuration analysis.
+
+### Soak RPS Improvement
+Run 1 showed 15 RPS, run 2 shows 23 RPS. Same pattern as 1w/2w — the improved `run_tests.sh` methodology produces higher soak RPS. Run 2's 23 RPS matches 1w and 2w, confirming all configs produce identical soak throughput at 30 VUs.
 
 ---
 
@@ -45,18 +71,14 @@
 
 **Results:**
 
-| Metric | Value |
-|--------|-------|
-| p(95) | 78ms |
-| p(90) | 72ms |
-| Avg response time | 59ms |
-| Median (p50) | 61ms |
-| Max | 140ms |
-| Error rate | 0% |
-| Checks passed | 100% (2,774/2,774) |
-| Total requests | 2,045 |
-| RPS | ~64 |
-| Iterations | 146 (4.6/s) |
+| Metric | Run 1 | Run 2 |
+|--------|-------|-------|
+| p(95) | 78ms | 72ms |
+| Avg | 59ms | 57ms |
+| Max | 140ms | 155ms |
+| Error rate | 0% | 0% |
+| Total requests | 2,045 | 2,185 |
+| RPS | ~64 | ~69 |
 
 **Comparison across configurations:**
 
@@ -83,18 +105,17 @@
 
 **Results:**
 
-| Scenario | Endpoints | p(95) | Avg | Threshold | Result |
-|----------|-----------|-------|-----|-----------|--------|
-| Light Reads | GET /health, /users/{id}, /events/{id}, /bookings/{id} | 80ms | 50ms | <200ms | PASS |
-| List Reads | GET /users/, /events/, /bookings/ (limit=100) | 41ms | 21ms | <500ms | PASS |
-| Search & Filter | GET /events/search, /events/upcoming, /users/{id}/bookings, /events/{id}/bookings | 60ms | 27ms | <500ms | PASS |
-| Writes | POST /bookings/, PATCH /bookings/{id}/cancel | 72ms | 44ms | <1000ms | PASS |
-| Heavy Aggregations | GET /events/{id}/stats, /events/popular, /stats | 79ms | 36ms | <1500ms | PASS |
+| Scenario | R1 p(95) | R2 p(95) | Threshold | Result |
+|----------|----------|----------|-----------|--------|
+| Light Reads | 80ms | 68ms | <200ms | PASS |
+| List Reads | 41ms | 34ms | <500ms | PASS |
+| Search & Filter | 60ms | 56ms | <500ms | PASS |
+| Writes | 72ms | 69ms | <1000ms | PASS |
+| Heavy Aggregations | 79ms | 75ms | <1500ms | PASS |
 
-- **Total requests:** 25,044
-- **Checks passed:** 100% (25,043/25,043)
-- **Error rate:** 0%
-- **Total RPS:** ~54
+- **Total requests:** 25,044 (R1), 25,400 (R2)
+- **Error rate:** 0% (both runs)
+- **Total RPS:** ~54 (R1), ~55 (R2)
 
 **Comparison across configurations:**
 
@@ -141,18 +162,14 @@ All Phase B tests use the same weighted traffic distribution:
 
 **Results:**
 
-| Metric | Value |
-|--------|-------|
-| p(95) | 31ms |
-| p(90) | 28ms |
-| Median (p50) | 17ms |
-| Avg | 19ms |
-| Max | 134ms |
-| Error rate | 0% |
-| Checks passed | 100% (15,415/15,415) |
-| Total requests | 15,416 |
-| RPS | ~32 |
-| Bookings created | 1,819 |
+| Metric | Run 1 | Run 2 |
+|--------|-------|-------|
+| p(95) | 31ms | 30ms |
+| Avg | 19ms | 18ms |
+| Max | 134ms | 83ms |
+| Error rate | 0% | 0% |
+| Total requests | 15,416 | 15,362 |
+| RPS | ~32 | ~32 |
 
 **Comparison across configurations:**
 
@@ -179,21 +196,18 @@ All Phase B tests use the same weighted traffic distribution:
 
 **Results:**
 
-| Metric | Value |
-|--------|-------|
-| p(95) | 1,895ms |
-| p(90) | 1,592ms |
-| Median (p50) | 270ms |
-| Avg | 723ms |
-| Max | 60s (timeout) |
-| Error rate | 1.97% (1,095 requests) |
-| Checks passed | 98.03% (54,448/55,543) |
-| Total requests | 55,544 |
-| RPS | ~111 |
-| Bookings | 6,499 success / 125 failed / 22 sold out |
-| Duration | 8.3 min |
+| Metric | Run 1 | Run 2 |
+|--------|-------|-------|
+| p(95) | 1,895ms | 1,691ms |
+| Avg | 723ms | 736ms |
+| Max | 60s | 60s |
+| Error rate | 1.97% | 1.39% |
+| Total requests | 55,544 | 54,728 |
+| RPS | ~111 | ~110 |
+| Duration | 8.3 min | 8.3 min |
+| Threshold | **FAIL** | **FAIL** |
 
-**Threshold result:** **FAILED** — p(95) = 1,895ms > 1,500ms threshold.
+**Both runs FAIL** — p(95) exceeds 1,500ms threshold consistently. This is a highly reproducible result.
 
 **Comparison across configurations:**
 
@@ -244,58 +258,37 @@ With only 0.5 CPU per worker, these operations queue at the OS scheduler level, 
 
 **Results:**
 
-| Metric | Value |
-|--------|-------|
-| p(95) | 44ms |
-| p(90) | 35ms |
-| Median (p50) | 19ms |
-| Avg | 86ms |
-| Max | 102s (single stuck request) |
-| Error rate | 0.06% (1 request) |
-| Checks passed | 99.94% (1,730/1,731) |
-| Total requests | 1,732 |
-| RPS | ~8 |
-| Bookings | 234 success / 1 failed |
-| Duration | 3.5 min |
+| Metric | Run 1 | Run 2 |
+|--------|-------|-------|
+| p(95) | **44ms** | **3,412ms** |
+| Avg | 86ms | 1,060ms |
+| Max | 102s | 8,477ms |
+| Error rate | 0.06% | **2.60%** |
+| Total requests | 1,732 | 8,808 |
+| RPS | ~8 | ~42 |
+| Duration | 3.5 min | 3.5 min |
+| Threshold | **PASS** | **FAIL** |
 
-**Threshold result:** PASSED — p(95) = 44ms < 2,000ms
+**⚠ CRITICAL: This result is NOT reproducible.** Run 1 showed the best spike performance of any configuration (p95=44ms). Run 2 FAILED with p95=3,412ms. **This is the same spike inconsistency seen with 2 workers.**
 
-**Comparison across configurations:**
+**Multi-run comparison across configurations:**
 
-| Metric | 1w | 2w | 4w |
-|--------|----|----|-----|
-| p(95) | 60s (timeout) | 1,148ms | **44ms** |
-| Max | 60s | 2.3s | 102s* |
-| Error rate | 9.03% | 0% | 0.06% |
-| Threshold | **FAIL** | PASS | PASS |
-| Total requests | 2,890 | 12,134 | 1,732 |
-| Test duration | ~4 min | ~15 min | 3.5 min |
-| API after test | Unresponsive | Alive | Healthy |
-
-*Single stuck request outlier; 95th percentile was 44ms.
-
-**This is the strongest result for the 4-worker configuration.**
+| Config | R1 Spike | R2 Spike | Consistent? |
+|--------|----------|----------|-------------|
+| 1w | FAIL (60s) | FAIL (60s) | Yes (always FAIL) |
+| 2w | PASS (1,148ms) | FAIL (60s) | **No** |
+| 4w | PASS (44ms) | FAIL (3,412ms) | **No** |
 
 **Analysis:**
 
-The spike test shows a dramatic progression across configurations:
+The spike test is inherently noisy for ALL multi-worker configurations. The outcome depends on:
 
-1. **1w:** Catastrophic failure. System becomes unresponsive, never recovers. 60s timeout p(95), 9% errors.
-2. **2w:** Survives with degradation. p(95) = 1,148ms, 0% errors, self-recovers but test extends to 15 min.
-3. **4w:** Barely notices the spike. p(95) = 44ms — **the same latency as normal operation.** Test completes in the expected 3.5 min.
+1. **OS connection distribution at burst time.** If connections split evenly across 4 workers (~75 each), the burst is absorbed easily (run 1). If distribution is uneven, one or more workers cascade (run 2).
+2. **CPU scheduling during the burst.** 4 workers on 2 CPUs means CPU contention during the 30s burst. If the OS scheduler handles context switches efficiently, latency stays low. If not, queues build.
 
-Why does 4w excel at spikes but fail at sustained stress? The answer lies in the **duration of overload:**
+Run 1's spectacular result (p95=44ms) was a best-case scenario. Run 2's FAIL shows the worst case. The truth is somewhere in between — 4 workers provides better *odds* of surviving a spike, but doesn't guarantee it.
 
-- **Spike test:** 300 VUs for 30 seconds, then drops back to 10. The burst is brief.
-- **Stress test:** 300 VUs sustained for 2+ minutes during the highest stage.
-
-With 4 workers on 2 CPUs:
-- **Brief burst (spike):** The OS can temporarily over-schedule all 4 workers. CPU briefly hits 100% but the burst ends before queues build up. 4 independent event loops absorb the connection wave, and no single worker is overwhelmed.
-- **Sustained overload (stress):** The CPU contention compounds over minutes. Request queues build at the OS scheduler level, creating cascading latency.
-
-**The spike test's low total request count (1,732)** is actually a positive signal — it means the test completed in its designed 3.5 min window. The 2w test ran for 15 min because stuck requests extended the test. The 4w system processed the spike cleanly and moved on.
-
-**Conclusion:** 4 workers provides the best spike resilience of any configuration tested. The system absorbs sudden 300 VU bursts with near-zero impact on latency. This is the ideal configuration for traffic patterns with sudden bursts followed by normal operation.
+**Conclusion:** The spike test cannot be used as a reliable differentiator between worker configurations. Only 1 worker is consistently FAIL. Both 2w and 4w are probabilistic — sometimes PASS, sometimes FAIL.
 
 ---
 
@@ -308,32 +301,25 @@ With 4 workers on 2 CPUs:
 
 **Results:**
 
-| Metric | Value |
-|--------|-------|
-| p(95) | 34ms |
-| p(90) | 30ms |
-| Median (p50) | 17ms |
-| Avg | 19ms |
-| Max | 128ms |
-| Error rate | 0.00% |
-| Checks passed | 100% (43,344/43,344) |
-| Total requests | 43,345 |
-| RPS | ~15 |
-| Bookings created | 5,168 |
-| Sold out | 10 |
-| Duration | 48 min* |
+| Metric | Run 1 | Run 2 |
+|--------|-------|-------|
+| p(95) | 34ms | 29ms |
+| Avg | 19ms | 17ms |
+| Max | 128ms | 86ms |
+| Error rate | 0.00% | 0.00% |
+| Total requests | 43,345 | 44,001 |
+| RPS | 15* | 23 |
+| Duration | 48 min† | 32 min |
 
-*A single iteration took 16.7 minutes (stuck request), extending the test from 32 to 48 min. All other metrics — including p(95), error rate, and latency stability — were unaffected.
+*Run 1 RPS of 15 reflects methodology differences. Run 2's 23 RPS matches all configs.
+†Run 1 extended due to a stuck iteration (16.7 min); not reproduced in run 2.
 
-**Comparison across configurations:**
+**Comparison across configurations (Run 2 data):**
 
 | Metric | 1w | 2w | 4w |
 |--------|----|----|-----|
-| p(95) | 28ms | 28ms | 34ms |
-| Avg | 16ms | 22ms | 19ms |
-| Max | 359ms | 10.3s* | 128ms |
-| RPS | 7 | 23 | 15 |
-| Total requests | 13,945 | 43,775 | 43,345 |
+| p(95) | 25ms | 31ms | 29ms |
+| RPS | 23 | 23 | 23 |
 | Error rate | 0% | 0% | 0% |
 
 *2w max from network outlier; server processing max was 130ms.
@@ -353,49 +339,48 @@ With 4 workers on 2 CPUs:
 
 **Purpose:** Find the absolute maximum throughput using open-model load.
 
-**Config:** ramping-arrival-rate executor. Ramp from 10 to 500 iterations/s over the test duration. preAllocatedVUs = 50, maxVUs = 50. Auto-abort when p(95) > 5000ms.
+**Config:** ramping-arrival-rate executor. Ramp from 10 to 500 iterations/s over the test duration. preAllocatedVUs = 50, maxVUs = 500 (Run 2; Run 1 used maxVUs = 50). Auto-abort when p(95) > 5000ms.
 **Thresholds:** p(95) < 5000ms with abortOnFail.
 
 **Results:**
 
-| Metric | Value |
-|--------|-------|
-| p(95) | 31ms |
-| p(90) | 27ms |
-| Median (p50) | 17ms |
-| Avg | 18ms |
-| Max | 297ms |
-| Error rate | 0.00% |
-| Checks passed | 100% (25,770/25,770) |
-| Total requests | 25,771 |
-| RPS | ~10 avg |
-| VUs used | 4 (max) |
-| Bookings created | 3,100 |
-| Duration | ~45 min (completed without abort) |
+| Metric | Run 1 (maxVUs=50) | Run 2 (maxVUs=500) |
+|--------|-------------------|---------------------|
+| p(95) | 31ms | 1,890ms |
+| Avg | 18ms | 2,355ms |
+| Max | 297ms | 60s |
+| Error rate | 0% | 4.15% |
+| Total requests | 25,771 | 122,057 |
+| RPS | ~10 | ~99 |
+| Dropped iterations | 0 | 104,138 |
+| Duration | 45 min (completed) | 20.5 min (completed) |
+| Threshold | **PASS** | **PASS** |
 
-**Threshold result:** PASSED — p(95) = 31ms < 5,000ms. **Abort condition never triggered.**
+**⚠ Configuration change:** Run 1 used maxVUs=50 (only 4 VUs ever allocated — trivially easy). Run 2 uses maxVUs=500 (standard config matching 1w/2w). **Run 2 is the correct comparison.**
 
-**Comparison across configurations:**
+**Comparison across configurations (Run 2, maxVUs=500):**
 
 | Metric | 1w | 2w | 4w |
 |--------|----|----|-----|
-| p(95) | 19.3s | 30.4s | **31ms** |
-| Error rate | 9.11% | 5.86% | **0%** |
-| Max | 3.7 min | 60s | 297ms |
-| Threshold | ABORT | FAIL | **PASS** |
-| Duration | 17.5 min (aborted) | 13.2 min (aborted) | 45 min (completed) |
+| p(95) | 60s | 31.1s | **1,890ms** |
+| Error rate | 5.04% | 5.68% | 4.15% |
+| Dropped | 134K | 44K | 104K |
+| Threshold | FAIL | FAIL | **PASS** |
 
-**This is the first configuration to pass the breakpoint test.**
+**4 workers is the only configuration to pass the breakpoint test** even with the standard maxVUs=500 config.
 
 **Analysis:**
 
-The breakpoint test results are dramatic: where 1w and 2w both collapsed (19s and 30s p(95) respectively), 4 workers handled the entire test with p(95) = 31ms and zero errors. The abort condition (p95 > 5000ms) was never triggered, allowing the test to run to completion.
+With 4 workers and maxVUs=500, the system handles the ramping arrival rate much better than 1w or 2w:
+- p(95) of 1,890ms stays under the 5,000ms threshold
+- More total requests processed (122K vs 34K for 2w)
+- Higher sustained RPS (99 vs 43 for 2w)
 
-With 4 workers, each handling a portion of the incoming request stream, the system was never pushed to saturation. The maximum VUs observed was only 4 — meaning the fast response times (avg 18ms) allowed k6 to process iterations with minimal VU allocation.
+The higher dropped iterations (104K) vs 2w (44K) reflects the longer test duration (20.5 min vs 13 min — 2w aborted earlier).
 
-**Why breakpoint passes but stress fails:** The breakpoint test uses an open-model executor (ramping-arrival-rate) that sends requests at a controlled rate regardless of response times. The stress test uses a closed-model executor (ramping VUs) where 300 VUs each send requests as fast as possible, creating sustained concurrent connections. The breakpoint test's pacing prevents the CPU contention spiral that the stress test triggers.
+**Why breakpoint passes but stress fails:** The breakpoint test uses an open-model executor (ramping-arrival-rate) that sends requests at a controlled rate. The stress test uses closed-model (300 VUs sending as fast as possible). The open model's pacing prevents the CPU contention spiral.
 
-**Conclusion:** 4 workers handles open-model load comfortably. The system never reaches its capacity ceiling under controlled arrival rates, even at the test's maximum. This is the strongest evidence that the 4-worker configuration is suitable for real-world traffic patterns (which are typically open-model).
+**Conclusion:** 4 workers handles open-model load better than any other configuration, passing the breakpoint threshold that 1w and 2w both fail.
 
 ---
 
@@ -410,21 +395,16 @@ With 4 workers, each handling a portion of the incoming request stream, the syst
 
 **Results:**
 
-| Metric | Value |
-|--------|-------|
-| Booking latency p(95) | 25ms |
-| Booking latency avg | 15ms |
-| Booking latency median | 11ms |
-| Booking latency max | 635ms |
-| HTTP p(95) | 63ms |
-| HTTP avg | 35ms |
-| Error rate | 0.00% |
-| Checks passed | 100% (16,632/16,632) |
-| Total requests | 16,634 |
-| RPS | ~137 |
-| Bookings success | 283 |
-| Sold out (409) | 8,033 |
-| Initial tickets | 283 |
+| Metric | Run 1 | Run 2 |
+|--------|-------|-------|
+| Booking latency p(95) | 25ms | 30ms |
+| Booking latency avg | 15ms | 18ms |
+| HTTP p(95) | 63ms | 66ms |
+| Max | 635ms | 786ms |
+| Error rate | 0.00% | 0.00% |
+| Total requests | 16,634 | 16,610 |
+| RPS | ~137 | ~137 |
+| Bookings success | 283 | 283 |
 
 **Comparison across configurations:**
 
@@ -480,18 +460,14 @@ The 2w result was the worst because it combined moderate per-worker load (enough
 
 **Results:**
 
-| Metric | Read-heavy (90R/10W) | Write-heavy (40R/60W) |
-|--------|---------------------|----------------------|
-| p(95) | 38ms | 32ms |
-| Median | 20ms | 15ms |
-| Avg | 22ms | 18ms |
-| Max | 120ms | 141ms |
-| Error rate | 0% | 0% |
-| Bookings created | 802 | 2,761 |
+| Metric | R1 Read | R1 Write | R2 Read | R2 Write |
+|--------|---------|----------|---------|----------|
+| p(95) | 38ms | 32ms | 32ms | 30ms |
+| Avg | 22ms | 18ms | — | — |
+| Error rate | 0% | 0% | 0% | 0% |
 
-- **Total requests:** 16,085
-- **Checks passed:** 100% (16,084/16,084)
-- **Combined RPS:** ~43
+- **Combined RPS:** ~43 (both runs)
+- **Checks passed:** 100% (both runs)
 
 **Comparison across configurations:**
 
@@ -528,41 +504,32 @@ The 2w result was the worst because it combined moderate per-worker load (enough
 
 **Results:**
 
-| Metric | Value |
-|--------|-------|
-| p(95) | 2,450ms |
-| p(90) | 1,779ms |
-| Median (p50) | 24ms |
-| Avg | 405ms |
-| Max | 5,983ms (~6s) |
-| Error rate | 1.20% (278 requests) |
-| Checks passed | 98.80% (22,838/23,116) |
-| Total requests | 23,117 |
-| RPS | ~62 |
-| Bookings | 2,737 success / 39 failed |
+| Metric | Run 1 | Run 2 |
+|--------|-------|-------|
+| p(95) | 2,450ms | 1,598ms |
+| Avg | 405ms | 425ms |
+| Max | 6s | 60s |
+| Error rate | 1.20% | 1.43% |
+| Total requests | 23,117 | 21,047 |
+| RPS | ~62 | ~57 |
+| Threshold | PASS | PASS |
 
-**Comparison across configurations:**
+**Both runs PASS** (p95 < 10,000ms). This is a key difference from 2w, where recovery was inconsistent (R1 PASS, R2 FAIL).
 
-| Metric | 2w | 4w |
-|--------|----|----|
-| p(95) | 667ms | 2,450ms |
-| Avg | 590ms | 405ms |
-| Max | 60s (timeout) | **6s** |
-| Error rate | 0.60% | 1.20% |
-| RPS | 57 | 62 |
-| Total requests | 21,058 | 23,117 |
+**Mixed signals on worst-case latency:** Run 1 showed max=6s (no timeouts), run 2 showed max=60s (some timeouts). However, the p(95) actually improved in run 2 (1,598ms vs 2,450ms), suggesting overall recovery is good even when a few requests timeout.
 
-**Analysis:**
+**Comparison with 2w (Run 2 data):**
 
-1. **No timeouts.** The max dropped from 60s (2w) to 6s (4w). With 4 workers, no request gets stuck long enough to hit the timeout. This is a 10x improvement in worst-case latency.
+| Metric | 2w R2 | 4w R2 |
+|--------|-------|-------|
+| p(95) | 59,996ms (FAIL) | 1,598ms (PASS) |
+| Error rate | 5.44% | 1.43% |
+| RPS | 15 | 57 |
+| Threshold | **FAIL** | **PASS** |
 
-2. **Higher p(95) is a throughput artifact.** The 4w system processes more requests during the spike (62 vs 57 RPS) and more total requests (23,117 vs 21,058). More requests complete during the high-latency spike window, pulling up the overall p(95).
+**Analysis:** The recovery test is where 4 workers shows a clear, reproducible advantage over 2 workers. While 2w recovery is inconsistent (R1 PASS, R2 FAIL), 4w recovery PASSES in both runs. The additional event loops provide enough capacity to drain the post-spike backlog before timeout cascades begin.
 
-3. **More errors, but different failure mode.** 4w has 1.20% errors vs 2w's 0.60%. With 2w, some requests silently timeout (not counted as iterations). With 4w, the system attempts to serve more requests during the spike, resulting in some transient failures — but no 60s timeouts.
-
-4. **Median of 24ms** shows the post-recovery period returns to normal quickly. The elevated p(95) is dominated by the spike period, not the recovery phase.
-
-**Conclusion:** The system recovers from the 300 VU spike with no timeouts. While the aggregate p(95) is higher than 2w, the worst-case behavior (max 6s vs 60s) is dramatically better. All thresholds pass comfortably.
+**Conclusion:** 4 workers consistently recovers from 300 VU spikes. This is a reliable architectural advantage over 2 workers.
 
 ---
 
@@ -579,134 +546,129 @@ The 2w result was the worst because it combined moderate per-worker load (enough
 | Soak (30 VUs, 30 min) | 30 | Healthy | N/A |
 | Recovery (300 VU spike) | 300 | Brief degradation | Self-recovered |
 
-### Comparison Across All Configurations
+### Comparison Across All Configurations (Multi-Run)
 
-| Test | 1w Recovery | 2w Recovery | 4w Recovery |
-|------|-------------|-------------|-------------|
-| Stress (300 VUs) | 20 min stuck request | Clean completion | Clean completion, higher p95 |
-| Spike (300 VUs) | **No recovery** (restart) | Self-recovered (~15 min) | **Immediate** (~3.5 min) |
-| Breakpoint | Crashed (ABORT) | Degraded (FAIL) | **Healthy (PASS)** |
+| Test | 1w | 2w | 4w |
+|------|----|----|-----|
+| Stress (300 VUs) | PASS (both runs) | PASS (both runs) | **FAIL** (both runs) |
+| Spike (300 VUs) | **FAIL** (both runs) | INCONSISTENT | INCONSISTENT |
+| Breakpoint | FAIL (both runs) | FAIL (both runs) | **PASS** (both runs) |
+| Recovery | FAIL (R2 only) | INCONSISTENT | **PASS** (both runs) |
 
-### Failure Mode Evolution
-
-The 4-worker configuration changes the failure characteristics:
+### Failure Mode Evolution (confirmed across runs)
 
 | Property | 1w | 2w | 4w |
 |----------|----|----|-----|
 | Primary bottleneck | Event loop | Event loop | **CPU scheduling** |
-| Failure mode | Cascade → unresponsive | High latency → timeout | **Degraded p95, higher errors** |
-| Recovery behavior | No recovery | Slow recovery | Fast recovery |
-| Stuck connections | Yes (20+ min) | Rare (timeout at 60s) | No |
+| Failure mode | Cascade → unresponsive | Probabilistic cascade | **Degraded p95, higher errors** |
+| Recovery from 300 VU burst | Never recovers | **Sometimes** recovers | **Consistently** recovers |
+| Stress test result | PASS | PASS | **FAIL** |
 
-The shift from event-loop bottleneck to CPU-scheduling bottleneck is the defining characteristic of the 4w configuration. It handles burst traffic better (4 event loops for spike absorption) but degrades under sustained high load (4 processes competing for 2 CPUs).
+The key multi-run finding: 4 workers trades **stress test failure** (CPU contention under sustained load) for **consistent recovery** (4 event loops prevent cascade after bursts).
 
 ---
 
-## 1w vs 2w vs 4w Full Comparison
+## 1w vs 2w vs 4w Full Comparison (Multi-Run)
 
-### Summary
+### Reliable Results Only (consistent across runs)
 
 | Metric | 1w | 2w | 4w | Best |
 |--------|----|----|-----|------|
-| Tests passed | 7/9* | 9/10 | 9/10 | 2w / 4w |
-| Baseline p(95) | 62ms | 79ms | 78ms | 1w |
-| Load p(95) | 34ms | 29ms | 31ms | 2w |
-| Load max | 10.3s | 155ms | 134ms | 4w |
-| Stress p(95) | 353ms | 643ms | 1,895ms | 1w** |
-| Stress RPS | 29 | **171** | 111 | 2w |
-| Stress errors | 0.54% | **0.19%** | 1.97% | 2w |
-| Spike p(95) | 60s | 1,148ms | **44ms** | **4w** |
-| Spike errors | 9.03% | 0% | 0.06% | 2w |
-| Spike result | FAIL | PASS | **PASS** | 2w / 4w |
-| Soak p(95) | 28ms | 28ms | 34ms | 1w / 2w |
-| Soak RPS | 7 | **23** | 15 | 2w |
-| Breakpoint result | ABORT | FAIL | **PASS** | **4w** |
-| Contention p(95) | 48ms | 76ms | **25ms** | **4w** |
-| Write-heavy p(95) | 56ms | 40ms | **32ms** | **4w** |
-| Recovery max | N/A | 60s | **6s** | **4w** |
+| Load p(95) | 29ms | 32ms | 30ms | ~Same |
+| Load max | 72ms | 92ms | 83ms | ~Same |
+| Stress result | PASS | PASS | **FAIL** | 1w / 2w |
+| Stress RPS | 82 | 76 | 110 | 4w |
+| Stress p(95) | 457ms | 477ms | 1,691ms | 1w / 2w |
+| Soak p(95) | 25ms | 31ms | 29ms | ~Same |
+| Soak RPS | 23 | 23 | 23 | Same |
+| Breakpoint result | FAIL | FAIL | **PASS** | **4w** |
+| Contention booking p(95) | 42ms | 76–141ms | 25–30ms | **4w** |
+| Write-heavy p(95) | ~32ms | 40–74ms | 30–32ms | 4w |
+| Recovery result | FAIL | INCONSISTENT | **PASS** | **4w** |
 
-*1w had 9 tests total (no recovery test); spike FAIL + endpoint benchmark PARTIAL FAIL + breakpoint ABORT.
-**1w stress p(95) is low because the single worker dropped/queued most connections instead of serving them.
+### Unreliable Results (vary between runs — NOT for thesis conclusions)
 
-### Where Each Configuration Wins
+| Metric | Note |
+|--------|------|
+| Spike test | 1w always FAIL. 2w and 4w: INCONSISTENT (sometimes PASS, sometimes FAIL) |
+| 2w stress RPS | Varied from 76 to 171 between runs — cannot claim super-linear scaling |
+
+### Where Each Configuration Reliably Wins
 
 **1 Worker wins at:**
-- Low-concurrency latency (baseline p95 = 62ms)
+- Low-concurrency latency (baseline p95 = 45ms)
 - Simplicity (no inter-process overhead)
 
 **2 Workers wins at:**
-- Sustained high load (stress RPS = 171, best of all configs)
-- Soak throughput (23 RPS at 30 VUs)
-- Overall balance (no test failures except breakpoint)
+- None definitively (stress and spike advantages from run 1 not confirmed in run 2)
+- Similar stress behavior to 1w with run 2 data
 
 **4 Workers wins at:**
-- Spike resilience (p95 = 44ms — system barely notices 300 VU burst)
-- Breakpoint (only config to pass)
-- Contention performance (p95 = 25ms — best lock efficiency)
-- Write-heavy traffic (p95 = 32ms — writes faster than reads)
-- Recovery (max 6s vs 60s timeout, no stuck connections)
+- Breakpoint (only config to PASS — consistent)
+- Contention performance (p95 = 25–30ms — best lock efficiency, consistent)
+- Write-heavy traffic (p95 = 30–32ms, consistent)
+- Recovery (only config to consistently PASS)
+- Stress throughput (110 RPS, despite p95 FAIL)
 
-### Scaling Curve
+### Scaling Curve (Run 2 — reliable data)
 
 | Metric | 1w→2w | 2w→4w | Pattern |
 |--------|-------|-------|---------|
-| Stress RPS | +490% | **-35%** | Peaked at 2w |
-| Spike p(95) | -98% | -96% | Continues improving |
-| Soak RPS | +229% | -35% | Peaked at 2w |
-| Contention p(95) | +58% (worse) | -67% (better) | U-curve, 4w best |
-| Write p(95) | -29% (better) | -20% (better) | Linear improvement |
+| Load p(95) | +10% (same) | -6% (same) | Flat — 50 VUs doesn't stress any config |
+| Stress p(95) | +4% (same) | +254% (worse) | 4w CPU contention |
+| Stress RPS | -7% (same) | +45% (better) | 4w processes more requests (but degrades) |
+| Soak RPS | 0% (same) | 0% (same) | All configs identical at 30 VUs |
+| Contention p(95) | +81% (worse) | -79% (better) | U-curve confirmed |
+| Write p(95) | +131% (worse) | -59% (better) | 4w clearly best |
 
-**The scaling curve is NOT linear.** Performance characteristics depend heavily on the traffic pattern:
+**The scaling curve is NOT linear.** Key finding confirmed:
 
-- **Burst traffic (spike, breakpoint):** More workers always helps. Each additional event loop provides independent failure isolation.
-- **Sustained traffic (stress, soak):** Peaked at 2 workers (matching CPU cores). Adding workers beyond CPU count introduces scheduling overhead.
-- **Lock contention:** U-shaped curve. 2 workers is the worst (moderate per-worker load + doubled lock competitors). 4 workers is the best (minimal per-worker load, fast lock release).
+- **Moderate load (50 VUs):** Worker count makes NO difference. All configs produce identical results.
+- **Sustained overload (300 VUs):** 4w FAILS due to CPU contention. 1w and 2w PASS.
+- **Burst traffic:** Inconsistent across all multi-worker configs. Only 1w is consistently FAIL.
+- **Open-model (breakpoint):** 4w is the only config to PASS.
+- **Contention:** U-curve confirmed — 2w is worst, 4w is best.
 
 ---
 
-## Key Conclusions — 4 Uvicorn Workers
+## Key Conclusions — 4 Uvicorn Workers (Multi-Run)
 
 ### Performance Envelope
 
-| Metric | Value | Context |
-|--------|-------|---------|
-| Comfortable capacity | 50 VUs / 32 RPS | p(95) < 31ms, 0% errors |
-| Burst capacity | 300 VUs sudden | p(95) = 44ms, 0.06% errors |
-| Sustained overload | 300 VUs gradual | p(95) = 1,895ms, 1.97% errors (FAIL) |
-| Breakpoint | Open-model | p(95) = 31ms, 0% errors (PASS) |
+| Metric | Value | Reproducible? |
+|--------|-------|---------------|
+| Comfortable capacity | 50 VUs / 32 RPS, p(95) ~30ms | Yes |
+| Sustained overload | 300 VUs, p(95) ~1,700ms, FAIL | Yes (consistently FAIL) |
+| Breakpoint | Open-model, p(95) ~1,890ms, PASS | Yes |
+| Recovery | 300 VU burst → PASS | Yes (both runs) |
+| Spike | 300 VU burst | **No** (inconsistent) |
 
-### Architectural Strengths
-1. **Best spike resilience** — 300 VU burst absorbed with p(95) = 44ms, near-zero impact
-2. **First breakpoint pass** — handles open-model load without triggering abort
-3. **Best contention performance** — 25ms booking latency under 50 VU single-event contention
-4. **Fastest writes** — write-heavy traffic now faster than read-heavy at 32ms p(95)
-5. **No stuck connections** — max recovery latency 6s vs 60s timeout (2w)
+### Architectural Strengths (confirmed across runs)
+1. **Only breakpoint PASS** — handles open-model load better than 1w/2w
+2. **Best contention performance** — 25–30ms booking latency (consistent)
+3. **Fastest writes** — write-heavy p95 30–32ms (consistent)
+4. **Consistent recovery** — system reliably recovers from 300 VU bursts
+5. **Highest stress throughput** — 110 RPS (but at cost of higher latency)
 
-### Architectural Weaknesses
-1. **CPU-to-worker imbalance** — 4 workers on 2 CPUs causes degradation under sustained 300 VU load
-2. **Stress test regression** — only configuration to FAIL the stress threshold (1,895ms > 1,500ms)
-3. **Soak overhead** — lower throughput (15 RPS) than 2 workers (23 RPS) at moderate load
-4. **Low-load overhead** — multi-worker scheduling adds ~10ms p(95) vs 1w at 10 VUs
+### Architectural Weaknesses (confirmed across runs)
+1. **CPU-to-worker imbalance** — stress test consistently FAIL (p95 > 1,500ms)
+2. **Spike inconsistency** — NOT reliably better than 2 workers for burst traffic
+3. **Multi-worker overhead at low load** — baseline p95 ~72ms vs 1w's ~45ms
 
-### The CPU-to-Worker Ratio Rule
+### The CPU-to-Worker Ratio Rule (confirmed)
 
-The most important finding from the 4-worker tests: **worker count should match available CPU cores for sustained workloads.**
+| Workers:CPUs | Burst traffic | Sustained traffic | Breakpoint |
+|-------------|---------------|-------------------|------------|
+| 1:2 | Always FAIL | PASS | FAIL |
+| 2:2 | Inconsistent | PASS | FAIL |
+| 4:2 | Inconsistent | **FAIL** | **PASS** |
 
-| Workers:CPUs | Burst traffic | Sustained traffic |
-|-------------|---------------|-------------------|
-| 1:2 | Poor (event loop bottleneck) | Adequate (no CPU contention) |
-| 2:2 | Good (doubled capacity) | **Optimal** (1 CPU per worker) |
-| 4:2 | **Best** (4 failure domains) | Poor (0.5 CPU per worker) |
+### Revised Recommendation for the Thesis
 
-For production deployment:
-- If traffic is **bursty** (flash sales, viral events): maximize workers (4+), accept sustained-load tradeoff
-- If traffic is **sustained** (steady API traffic): match workers to CPU cores (2 workers on 2 CPUs)
-- If traffic is **mixed**: use 2 workers as the balanced default, add autoscaling for burst protection
+The multi-run data fundamentally changes the narrative:
 
-### Recommendation for the Thesis
-
-The 3-point scaling curve (1w, 2w, 4w) reveals that:
-1. **1 → 2 workers** provides the most dramatic overall improvement (spike fix, 6x stress RPS)
-2. **2 → 4 workers** is situational — improves burst resilience and contention but regresses sustained throughput
-3. **The CPU-to-worker ratio is the governing constraint**, not the raw worker count
-4. The optimal configuration depends on the expected traffic pattern, not just "more workers = better"
+1. **Spike test results are NOT reproducible** for any multi-worker config. Do not use spike data as a primary thesis conclusion.
+2. **The reliable differentiators are:** stress (1w/2w PASS, 4w FAIL), breakpoint (4w only PASS), contention (4w best), and recovery (4w consistently PASS).
+3. **The CPU-to-worker ratio rule is confirmed** — 4 workers on 2 CPUs degrades sustained throughput.
+4. **At moderate load (50 VUs), worker count makes zero difference.** The scaling benefit only appears under extreme load.
+5. **More runs are needed** to establish confidence intervals for the noisy tests (spike, stress RPS).

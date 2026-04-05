@@ -1,6 +1,6 @@
 # K6 Performance Test Results — 2 Uvicorn Workers
 
-**Date:** 2026-04-04
+**Date:** Run 1: 2026-04-04, Run 2: 2026-04-04/05
 **Configuration:** Docker (FastAPI + PostgreSQL), 2 Uvicorn workers
 **Seed data:** 1,000 users, 100 events, 2,000 bookings (re-seeded before each test via `run_tests.sh`)
 **Monitoring:** K6 → Prometheus remote write → Grafana dashboard (live visualization)
@@ -11,25 +11,48 @@
 
 ---
 
-## Summary Table
+## Multi-Run Summary Table
 
-| Test | Type | VUs | Duration | p(95) | Median | Avg | Error Rate | RPS | Status |
-|------|------|-----|----------|-------|--------|-----|------------|-----|--------|
-| Baseline | Smoke | 10 | 32s | 79ms | 58ms | 123ms* | 0% | 47 | PASS |
-| Endpoint Benchmark | Isolation | 20 | ~7.7min | 51–74ms | — | 33ms | 0% | 55 | PASS |
-| Load | Normal load | 50 | 8min | 29ms | 15ms | 17ms | 0% | 32 | PASS |
-| Stress | Overload | 300 | 8min | 643ms | 87ms | 331ms | 0.19% | 171 | PASS |
-| Spike | Burst | 300 | ~15min | 1,148ms | 648ms | 570ms | 0% | 13 | PASS |
-| Soak | Endurance | 30 | 32min | 28ms | 14ms | 22ms | 0% | 23 | PASS |
-| Breakpoint | Capacity | 500 | ~13min | 30.4s | 18ms | 2.9s | 5.86% | 43 | FAIL |
-| Contention | Locking | 50 | 2min | 76ms | 21ms | 32ms | 0% | 122 | PASS |
-| Read vs Write (read) | Traffic profile | 30 | 6.4min | 37ms | 19ms | 21ms | 0% | ~27 | PASS |
-| Read vs Write (write) | Traffic profile | 30 | 6.4min | 40ms | 21ms | 26ms | 0% | ~27 | PASS |
-| Recovery | Recovery | 300 | 6.2min | 667ms | 34ms | 590ms | 0.60% | 57 | PASS |
+| Test | Type | VUs | R1 p(95) | R2 p(95) | R1 Errors | R2 Errors | R1 RPS | R2 RPS | Status |
+|------|------|-----|----------|----------|-----------|-----------|--------|--------|--------|
+| Baseline | Smoke | 10 | 79ms* | 42ms | 0% | 0% | 47 | 90 | PASS |
+| Endpoint Benchmark | Isolation | 20 | 51–74ms | 25–72ms | 0% | 0% | 55 | 59 | PASS |
+| Load | Normal load | 50 | 29ms | 32ms | 0% | 0% | 32 | 32 | PASS |
+| Stress | Overload | 300 | 643ms | 477ms | 0.19% | 1.71% | 171 | **76** | PASS |
+| Spike | Burst | 300 | 1,148ms | **60,001ms** | 0% | **9.16%** | 13 | 12 | **INCONSISTENT** (R1 PASS, R2 FAIL) |
+| Soak | Endurance | 30 | 28ms | 31ms | 0% | 0% | 23 | 23 | PASS |
+| Breakpoint | Capacity | 500 | 30.4s | 31.1s | 5.86% | 5.68% | 43 | 43 | FAIL (consistent) |
+| Contention | Locking | 50 | 76ms | 141ms | 0% | 0% | 122 | 135 | PASS |
+| Read vs Write (read) | Traffic profile | 30 | 37ms | 55ms | 0% | 0% | ~27 | ~43 | PASS |
+| Read vs Write (write) | Traffic profile | 30 | 40ms | 74ms | 0% | 0% | ~27 | ~43 | PASS |
+| Recovery | Recovery | 300 | 667ms | **59,996ms** | 0.60% | **5.44%** | 57 | 15 | **INCONSISTENT** (R1 PASS, R2 FAIL) |
 
-**Overall: 9 passed, 1 failed (breakpoint). Spike test now passes with 2 workers.**
+*Run 1 baseline avg inflated by single 10s network outlier; server processing avg was 17ms.
 
-*Baseline avg inflated by single 10s network outlier; server processing avg was 17ms.
+**Overall: Stable tests pass consistently. Spike and recovery tests are NOT reproducible — passed in run 1, failed in run 2.**
+
+---
+
+## Multi-Run Variability Analysis
+
+### Stable Results (consistent across runs)
+- **Load test:** p(95) 29–32ms, 0% errors, 32 RPS. Extremely consistent.
+- **Soak test:** p(95) 28–31ms, 0% errors, 23 RPS. Rock solid.
+- **Breakpoint test:** Both runs FAIL with ~30s p(95), ~5.8% errors. Consistent.
+- **Endpoint benchmark:** All scenarios PASS both runs.
+
+### Critical Inconsistencies
+
+**Spike test (R1: PASS, R2: FAIL):** The spike test was described as the "headline improvement" for 2 workers in run 1 (p95=1,148ms, 0% errors). Run 2 shows p95=60,001ms and 9.16% errors — a complete regression to 1-worker-like behavior. **The spike test result is NOT reproducible** and cannot be used as a reliable thesis data point. The spike test's inherent noise (sudden 300 VU burst for only 30s) makes it sensitive to OS scheduler state, connection timing, and worker load distribution at the moment of the burst.
+
+**Recovery test (R1: PASS, R2: FAIL):** Same pattern as spike — run 1 passed cleanly (p95=667ms, 0.60% errors), run 2 failed catastrophically (p95=60s, 5.44% errors). Recovery depends on the same burst dynamics as the spike test.
+
+**Stress RPS (R1: 171, R2: 76):** The super-linear 5.9x scaling claim from run 1 (171 RPS vs 1w's 29) is NOT confirmed by run 2 (76 RPS). Run 2's 76 RPS vs 1w's 82 RPS suggests 2w may not provide throughput improvement under sustained stress — the benefit is in latency (p95=477ms) and error rate (1.71%). The run 1 RPS of 171 may have been an anomaly.
+
+**Contention/Read-Write variance:** Contention booking p95 went from 76ms to 141ms; read/write went from 37/40ms to 55/74ms. These moderate-load tests showed more variance than expected, possibly due to background system activity.
+
+### Conclusion on Stability
+The 2-worker configuration is **reliable for moderate-load tests** (load, soak, endpoint benchmark). High-concurrency burst tests (spike, recovery) are **not reproducible** and should be interpreted as range indicators rather than precise values.
 
 ---
 
@@ -44,22 +67,16 @@
 
 **Results:**
 
-| Metric | Value |
-|--------|-------|
-| p(95) | 79ms |
-| p(90) | 72ms |
-| Avg response time | 123ms* |
-| Median (p50) | 58ms |
-| Max | 10.1s* |
-| Server processing (waiting) p(95) | 35ms |
-| Server processing (waiting) avg | 17ms |
-| Error rate | 0% |
-| Checks passed | 100% (2,033/2,033) |
-| Total requests | 1,499 |
-| RPS | ~47 |
-| Iterations | 107 (3.3/s) |
+| Metric | Run 1 | Run 2 |
+|--------|-------|-------|
+| p(95) | 79ms* | 42ms |
+| Avg | 123ms* | 19ms |
+| Max | 10.1s* | 105ms |
+| Error rate | 0% | 0% |
+| Total requests | 1,499 | 2,829 |
+| RPS | ~47 | ~90 |
 
-*A single request experienced a 10s network send delay, inflating the avg and max. The server processing time (http_req_waiting) was unaffected: avg 17ms, p95 35ms.
+*Run 1 had a single 10s network send delay inflating avg/max/p95. Server processing was unaffected (avg 17ms, p95 35ms). Run 2 shows the true baseline without anomalies: p95=42ms, max=105ms.
 
 **Comparison with 1 worker:**
 
@@ -85,22 +102,21 @@
 
 **Results:**
 
-| Scenario | Endpoints | p(95) | Avg | Threshold | Result |
-|----------|-----------|-------|-----|-----------|--------|
-| Light Reads | GET /health, /users/{id}, /events/{id}, /bookings/{id} | 68ms | 46ms | <200ms | PASS |
-| List Reads | GET /users/, /events/, /bookings/ (limit=100) | 51ms | 21ms | <500ms | PASS |
-| Search & Filter | GET /events/search, /events/upcoming, /users/{id}/bookings, /events/{id}/bookings | 58ms | 25ms | <500ms | PASS |
-| Writes | POST /bookings/, PATCH /bookings/{id}/cancel | 71ms | 44ms | <1000ms | PASS |
-| Heavy Aggregations | GET /events/{id}/stats, /events/popular, /stats | 74ms | 32ms | <1500ms | PASS |
+| Scenario | R1 p(95) | R2 p(95) | Threshold | Result |
+|----------|----------|----------|-----------|--------|
+| Light Reads | 68ms | 46ms | <200ms | PASS |
+| List Reads | 51ms | 72ms | <500ms | PASS |
+| Search & Filter | 58ms | 25ms | <500ms | PASS |
+| Writes | 71ms | 42ms | <1000ms | PASS |
+| Heavy Aggregations | 74ms | 44ms | <1500ms | PASS |
 
-- **Total requests:** 25,470
-- **Checks passed:** 100% (25,469/25,469)
-- **Error rate:** 0%
-- **Total RPS:** ~55
+- **Total requests:** 25,470 (R1), 27,120 (R2)
+- **Error rate:** 0% (both runs)
+- **Total RPS:** ~55 (R1), ~59 (R2)
 
-**All 5 scenarios passed**, including heavy_aggregations which failed in the 1w run due to scenario overlap. The 100s startTime gap fix ensures no concurrent execution between scenarios.
+**All 5 scenarios passed in both runs.** Results are consistent — all well within thresholds.
 
-**Conclusion:** Per-endpoint performance is excellent at 20 VUs with 2 workers. Heavy aggregations now completes cleanly in 74ms p(95) — well within the 1500ms threshold.
+**Conclusion:** Per-endpoint performance is excellent and reproducible at 20 VUs with 2 workers.
 
 ---
 
@@ -133,31 +149,27 @@ All Phase B tests use the same weighted traffic distribution:
 
 **Results:**
 
-| Metric | Value |
-|--------|-------|
-| p(95) | 29ms |
-| p(90) | 25ms |
-| Median (p50) | 15ms |
-| Avg | 17ms |
-| Max | 155ms |
-| Error rate | 0% |
-| Checks passed | 100% (15,430/15,430) |
-| Total requests | 15,431 |
-| RPS | ~32 |
-| Bookings created | 1,951 |
+| Metric | Run 1 | Run 2 |
+|--------|-------|-------|
+| p(95) | 29ms | 32ms |
+| Avg | 17ms | 18ms |
+| Max | 155ms | 92ms |
+| Error rate | 0% | 0% |
+| Total requests | 15,431 | 15,374 |
+| RPS | ~32 | ~32 |
 
-**Comparison with 1 worker:**
+**Comparison with 1 worker (Run 2 data):**
 
-| Metric | 1w | 2w | Change |
-|--------|----|----|--------|
-| p(95) | 34ms | 29ms | -15% (better) |
-| Avg | 38ms | 17ms | -55% (better) |
-| Max | 10.3s | 155ms | -98% (better) |
-| Error rate | 0% | 0% | Same |
+| Metric | 1w | 2w |
+|--------|----|----|
+| p(95) | 29ms | 32ms |
+| Max | 72ms | 92ms |
+| RPS | 32 | 32 |
+| Error rate | 0% | 0% |
 
-**Analysis:** The 2-worker configuration eliminates the long-tail latency seen in 1w (max dropped from 10.3s to 155ms). The p(95) improved by 15% and avg by 55%. At 50 VUs, both configurations handle the load without errors, but 2 workers provides a more consistent experience with no outliers.
+**Analysis:** Extremely consistent across runs (p95 29–32ms, 0% errors, 32 RPS). At 50 VUs, both 1w and 2w handle the load identically. The run 1 comparison that showed 1w max=10.3s vs 2w max=155ms reflected a 1w anomaly, not a real improvement from adding workers.
 
-**Conclusion:** Normal production load is handled effortlessly. The second worker eliminates tail latency spikes that occasionally occurred with 1 worker.
+**Conclusion:** Normal production load is handled effortlessly by both configurations. Results are highly reproducible.
 
 ---
 
@@ -170,40 +182,43 @@ All Phase B tests use the same weighted traffic distribution:
 
 **Results:**
 
-| Metric | Value |
-|--------|-------|
-| p(95) | 643ms |
-| p(90) | 495ms |
-| Median (p50) | 87ms |
-| Avg | 331ms |
-| Max | 60s |
-| Error rate | 0.19% (159 requests) |
-| Checks passed | 99.81% (81,867/82,026) |
-| Total requests | 82,027 |
-| RPS | ~171 |
-| Bookings | 9,604 success / 19 failed / 169 sold out |
+| Metric | Run 1 | Run 2 |
+|--------|-------|-------|
+| p(95) | 643ms | 477ms |
+| p(90) | 495ms | — |
+| Median (p50) | 87ms | — |
+| Avg | 331ms | 1,255ms |
+| Max | 60s | 60s |
+| Error rate | 0.19% | 1.71% |
+| Total requests | 82,027 | 38,509 |
+| RPS | **171** | **76** |
+| Bookings | 9,604 / 19 fail | — |
+| Threshold | PASS | PASS |
 
-**Comparison with 1 worker:**
+**Comparison with 1 worker (using reliable Run 2 data):**
 
-| Metric | 1w | 2w | Change |
-|--------|----|----|--------|
-| Total requests | 44,810 | 82,027 | +83% |
-| RPS | 29 | 171 | **+490%** |
-| Error rate | 0.54% | 0.19% | -65% |
-| Max | 20.1 min | 60s | No stuck connections |
-| Test duration | 26 min | 8 min | Completed in expected time |
-| Bookings | 5,410 | 9,604 | +78% |
+| Metric | 1w (R2) | 2w (R1) | 2w (R2) |
+|--------|---------|---------|---------|
+| p(95) | 457ms | 643ms | 477ms |
+| RPS | 82 | 171 | 76 |
+| Error rate | 1.48% | 0.19% | 1.71% |
+| Max | 60s | 60s | 60s |
 
-**Analysis:**
+**Analysis — Run Variability:**
 
-The stress test reveals the most dramatic improvement from adding a second worker:
+The stress test reveals significant run-to-run variability:
 
-1. **Throughput increased 5.9x** (171 vs 29 RPS). With two event loops, twice as many connections can be processed concurrently.
-2. **No stuck connections.** The 1w stress test had a single request stuck for 20.1 minutes, extending the test from 8 to 26 minutes. With 2 workers, the max request time was 60s (the timeout), and the test completed in the expected 8 minutes.
-3. **Lower error rate** (0.19% vs 0.54%) despite processing nearly 2x the requests.
-4. **The p(95) is higher** (643ms vs 353ms), but this is because the 2w system actually processes requests that 1w was dropping or queueing indefinitely. Higher p95 with 5.9x throughput is a net positive.
+1. **RPS varied dramatically:** Run 1 showed 171 RPS (appearing to be 5.9x over 1w's 29 RPS). Run 2 shows 76 RPS, which is actually *below* 1w's run 2 RPS of 82. **The super-linear scaling claim from run 1 is NOT reproducible.**
 
-**Conclusion:** Two workers fundamentally change the stress test outcome. The system handles 300 VUs with nearly 6x the throughput, no stuck connections, and completes in the expected timeframe. The single-worker bottleneck (event loop saturation) is effectively doubled.
+2. **p(95) improved in run 2** (477ms vs 643ms), suggesting per-request latency may be slightly better, but total throughput dropped.
+
+3. **Both runs PASS** the threshold (p95 < 1500ms), confirming the stress test is a reliable PASS for 2 workers.
+
+4. **No stuck connections** in either run. Both completed in ~8 minutes as designed.
+
+The high run-to-run RPS variance (171 vs 76) suggests the stress test's throughput is sensitive to OS-level scheduling decisions about how the 300 VU connections are distributed across the two workers. This makes stress RPS an unreliable comparison metric without more data points.
+
+**Conclusion:** Two workers consistently PASS the stress test (p95 477–643ms, <2% errors). However, the throughput improvement over 1 worker is unclear — it ranges from negligible to 5.9x depending on the run. More runs are needed to establish a reliable throughput baseline.
 
 ---
 
@@ -216,48 +231,39 @@ The stress test reveals the most dramatic improvement from adding a second worke
 
 **Results:**
 
-| Metric | Value |
-|--------|-------|
-| p(95) | 1,148ms |
-| p(90) | 1,045ms |
-| Median (p50) | 648ms |
-| Avg | 570ms |
-| Max | 2,281ms |
-| Error rate | 0% |
-| Checks passed | 100% (12,133/12,133) |
-| Total requests | 12,134 |
-| RPS | ~13 |
-| Bookings | 1,438 success |
+| Metric | Run 1 | Run 2 |
+|--------|-------|-------|
+| p(95) | 1,148ms | **60,001ms** |
+| p(90) | 1,045ms | — |
+| Median (p50) | 648ms | — |
+| Avg | 570ms | 5,884ms |
+| Max | 2,281ms | 60,030ms |
+| Error rate | 0% | **9.16%** |
+| Total requests | 12,134 | 2,785 |
+| RPS | ~13 | ~12 |
+| Threshold | **PASS** | **FAIL** |
 
-**Threshold result:** PASSED (p(95) = 1,148ms < 2,000ms)
+**⚠ CRITICAL: This result is NOT reproducible.** Run 1 passed cleanly (p95=1,148ms, 0% errors). Run 2 failed catastrophically (p95=60s, 9.16% errors) — identical to 1-worker behavior.
 
-**Comparison with 1 worker:**
+**Comparison across runs and configurations:**
 
-| Metric | 1w | 2w | Change |
-|--------|----|----|--------|
-| p(95) | 60s (timeout) | 1,148ms | **-98%** |
-| Max | 60s | 2.3s | -96% |
-| Error rate | 9.03% | 0% | **-100%** |
-| Threshold | FAIL | **PASS** | Fixed |
-| Total requests | 2,890 | 12,134 | +320% |
-| API after test | Unresponsive | Alive | Survived |
+| Metric | 1w (both runs) | 2w Run 1 | 2w Run 2 |
+|--------|---------------|----------|----------|
+| p(95) | ~60s | 1,148ms | 60,001ms |
+| Error rate | ~9% | 0% | 9.16% |
+| Threshold | FAIL | PASS | FAIL |
 
-**This is the headline improvement for the 2-worker configuration.**
+**Analysis — Why the inconsistency:**
 
-**Analysis:**
+The spike test creates a 300 VU burst for only 30 seconds. The outcome depends on:
 
-The spike test was the single-worker's worst failure: 60s timeouts, 9% errors, and the API became unresponsive with no self-recovery. With 2 workers:
+1. **Worker load distribution at burst time.** If the OS distributes connections evenly (150/150), both workers stay manageable. If one worker gets 200+ connections while the other gets fewer, the overloaded worker cascades exactly like a single worker.
+2. **OS scheduler state.** At the microsecond level, the burst timing relative to the OS scheduler's process allocation decisions matters.
+3. **Database connection pool state.** If one worker's pool is momentarily busier, the burst compounds the imbalance.
 
-1. **The system survived the spike.** No crashes, no unresponsive state, 0% errors.
-2. **p(95) dropped from 60s to 1.1s** — a 52x improvement.
-3. **The system recovered after the spike.** Unlike 1w where the API never recovered within the test window, 2w handled the post-spike observation period with functional (if elevated) latency.
-4. **4.2x more requests processed.** The 1w system was so overwhelmed it could barely serve any requests. The 2w system continued operating through the spike.
+Run 1 hit a lucky distribution; run 2 did not. The spike test is inherently a **probabilistic test** for 2 workers — sometimes the load splits well, sometimes it doesn't. This is a critical architectural finding: **2 workers does not reliably survive 300 VU spikes.**
 
-**Why 2 workers survive the spike:**
-
-When 290 connections arrive in 10 seconds, two event loops can split the load. Each worker handles ~150 connections instead of the full 300. While each worker is under heavy load, neither enters the catastrophic cascade failure that a single worker experiences. The connection queue per worker stays manageable, preventing the self-reinforcing timeout spiral.
-
-**Conclusion:** Adding a second worker transforms the spike test from a catastrophic failure to a passing test. This is the strongest evidence that multi-worker deployment is essential for systems that may experience sudden traffic bursts.
+**Conclusion:** The spike test CANNOT be claimed as a reliable improvement for 2 workers. It passes in some runs and fails in others. For the thesis, this should be reported as "inconsistent — passes ~50% of runs" rather than a definitive PASS or FAIL. The 1-worker spike test is consistently FAIL, confirming the single event loop limitation is real.
 
 ---
 
@@ -270,41 +276,30 @@ When 290 connections arrive in 10 seconds, two event loops can split the load. E
 
 **Results:**
 
-| Metric | Value |
-|--------|-------|
-| p(95) | 28ms |
-| p(90) | 25ms |
-| Median (p50) | 14ms |
-| Avg | 22ms |
-| Max | 10.3s* |
-| Error rate | 0.00% |
-| Checks passed | 100% (43,774/43,774) |
-| Total requests | 43,775 |
-| RPS | ~23 |
-| Bookings created | 5,190 |
-| Sold out | 11 |
-| Duration | 32 min |
+| Metric | Run 1 | Run 2 |
+|--------|-------|-------|
+| p(95) | 28ms | 31ms |
+| Avg | 22ms | 17ms |
+| Max | 10.3s* | 94ms |
+| Error rate | 0.00% | 0.00% |
+| Total requests | 43,775 | 43,958 |
+| RPS | ~23 | ~23 |
+| Bookings created | 5,190 | — |
+| Duration | 32 min | 32 min |
 
-*Single outlier (10.3s) in http_req_sending; server processing max was 130ms.
+*Run 1 had a single outlier (10.3s) in http_req_sending; not reproduced in run 2.
 
-**Comparison with 1 worker:**
+**Comparison with 1 worker (using run 2 data for both):**
 
-| Metric | 1w | 2w | Change |
-|--------|----|----|--------|
-| p(95) | 28ms | 28ms | Same |
-| Avg | 16ms | 22ms | +38% |
-| RPS | 7 | 23 | **+229%** |
-| Total requests | 13,945 | 43,775 | +214% |
-| Error rate | 0% | 0% | Same |
+| Metric | 1w | 2w |
+|--------|----|----|
+| p(95) | 25ms | 31ms |
+| RPS | 23 | 23 |
+| Error rate | 0% | 0% |
 
-**Analysis:**
+**Analysis:** With proper re-seeding (`run_tests.sh`), both 1w and 2w show **identical soak RPS of 23** and similar p(95) (25–31ms). The run 1 "3.3x RPS improvement" was an artifact of 1w's lower RPS in its first run (7 RPS, likely affected by lingering state). At 30 VUs, both configurations handle the load identically — the bottleneck is not the event loop at this concurrency level.
 
-1. **p(95) is identical** (28ms for both configurations). At 30 VUs, both 1w and 2w handle the load comfortably — neither event loop is stressed.
-2. **RPS increased 3.3x** with 2 workers. With two event loops processing requests, iterations complete faster, allowing more total throughput at the same VU count.
-3. **No resource leaks.** Latency remained flat for the full 32 minutes. No memory growth, no connection pool exhaustion.
-4. **The 3.3x RPS improvement** at 30 VUs is notable. Even at moderate load, two workers provide meaningful throughput gains because request processing is distributed across two event loops.
-
-**Conclusion:** Rock-solid stability over 32 minutes. The soak test confirms no resource leaks with 2 workers and reveals a significant throughput bonus (3.3x) even at moderate concurrency.
+**Conclusion:** Rock-solid stability over 32 minutes in both runs. No resource leaks. The soak test is the most reproducible test in the suite. At 30 VUs, worker count makes no difference.
 
 ---
 
@@ -367,19 +362,17 @@ When 290 connections arrive in 10 seconds, two event loops can split the load. E
 
 **Results:**
 
-| Metric | Value |
-|--------|-------|
-| Booking latency p(95) | 76ms |
-| Booking latency avg | 32ms |
-| Booking latency median | 21ms |
-| Booking latency max | 685ms |
-| Error rate | 0.00% |
-| Checks passed | 100% (15,020/15,020) |
-| Total requests | 15,022 |
-| RPS | ~122 |
-| Bookings success | 283 |
-| Sold out (409) | 7,227 |
-| Initial tickets | 283 |
+| Metric | Run 1 | Run 2 |
+|--------|-------|-------|
+| Booking latency p(95) | 76ms | 141ms |
+| Booking latency avg | 32ms | 43ms |
+| HTTP p(95) | — | 108ms |
+| Max | 685ms | 1,023ms |
+| Error rate | 0.00% | 0.00% |
+| Total requests | 15,022 | 16,358 |
+| RPS | ~122 | ~135 |
+| Bookings success | 283 | 283 |
+| Sold out (409) | 7,227 | — |
 
 **Comparison with 1 worker:**
 
@@ -422,35 +415,26 @@ The contention test is the one scenario where 2 workers performs **worse** than 
 
 **Results:**
 
-| Metric | Read-heavy (90R/10W) | Write-heavy (40R/60W) |
-|--------|---------------------|----------------------|
-| p(95) | 37ms | 40ms |
-| Median | 19ms | 21ms |
-| Avg | 21ms | 26ms |
-| Max | 146ms | 508ms |
-| Error rate | 0% | 0% |
-| Bookings created | 798 | 843 |
+| Metric | R1 Read | R1 Write | R2 Read | R2 Write |
+|--------|---------|----------|---------|----------|
+| p(95) | 37ms | 40ms | 55ms | 74ms |
+| Avg | 21ms | 26ms | — | — |
+| Error rate | 0% | 0% | 0% | 0% |
 
-- **Total requests:** 10,302
-- **Checks passed:** 100% (10,301/10,301)
-- **Combined RPS:** ~27
-
-**Comparison with 1 worker:**
-
-| Metric | 1w read | 2w read | 1w write | 2w write |
-|--------|---------|---------|----------|----------|
-| p(95) | 38ms | 37ms | 56ms | 40ms |
-| Avg | 22ms | 21ms | 22ms | 26ms |
+- **Combined RPS:** ~27 (R1), ~43 (R2)
+- **Checks passed:** 100% (both runs)
 
 **Analysis:**
 
-1. **Write-heavy p(95) improved significantly** — from 56ms (1w) to 40ms (2w), a 29% reduction. With two workers, write transactions (which include row locks and commits) are distributed across two processes, reducing per-worker transaction overhead.
+Run-to-run variance is higher than expected for this moderate-load test:
 
-2. **Read-heavy performance is unchanged** — 37ms vs 38ms. Reads were never a bottleneck at 30 VUs.
+| Metric | R1 Read | R2 Read | R1 Write | R2 Write |
+|--------|---------|---------|----------|----------|
+| p(95) | 37ms | 55ms | 40ms | 74ms |
 
-3. **The read/write gap narrowed.** In 1w, write-heavy was 1.47x slower than read-heavy (56ms vs 38ms). In 2w, write-heavy is only 1.08x slower (40ms vs 37ms). The second worker almost eliminates the write penalty at moderate load.
+Both runs pass all thresholds with 0% errors, but absolute p(95) values vary by ~50%. This suggests sensitivity to background system activity or Docker resource scheduling. The RPS difference (27 vs 43) is significant and may reflect methodology improvements in run 2.
 
-**Conclusion:** Two workers significantly improve write-heavy performance, nearly closing the gap with read-heavy traffic. This confirms that write operations benefit more from additional workers than reads do at moderate concurrency.
+**Conclusion:** Both runs confirm 0% errors and pass all thresholds at 30 VUs. The write penalty (write/read ratio) is consistent: ~1.08x (R1) and ~1.35x (R2). Two workers handle mixed traffic reliably.
 
 ---
 
@@ -463,57 +447,46 @@ The contention test is the one scenario where 2 workers performs **worse** than 
 
 **Results:**
 
-| Metric | Value |
-|--------|-------|
-| p(95) | 667ms |
-| p(90) | 501ms |
-| Median (p50) | 34ms |
-| Avg | 590ms |
-| Max | 60s (timeout) |
-| Error rate | 0.60% (126 requests) |
-| Checks passed | 99.40% (20,931/21,057) |
-| Total requests | 21,058 |
-| RPS | ~57 |
-| Bookings | 2,540 success / 20 failed |
+| Metric | Run 1 | Run 2 |
+|--------|-------|-------|
+| p(95) | 667ms | **59,996ms** |
+| Avg | 590ms | 3,877ms |
+| Max | 60s | 60s |
+| Error rate | 0.60% | **5.44%** |
+| Total requests | 21,058 | 5,721 |
+| RPS | ~57 | ~15 |
+| Threshold | **PASS** | **FAIL** |
+
+**⚠ CRITICAL: This result is NOT reproducible.** Same pattern as the spike test — run 1 passed, run 2 failed catastrophically.
 
 **Analysis:**
 
-1. **The system recovered.** Despite the 300 VU spike, the API continued serving requests throughout and returned to normal operation during the 4-minute observation window.
+1. **Run 1:** The system recovered from the 300 VU spike. Error rate was minimal (0.60%), and the API returned to normal during the 4-minute observation window.
 
-2. **Error rate was minimal** (0.60%) — errors occurred during the spike peak, not during recovery.
+2. **Run 2:** The system did NOT recover. p(95) hit 60s timeout, requests dropped to 5,721 (vs 21,058 in run 1), and error rate jumped to 5.44%. The system entered the same timeout cascade seen in 1-worker spike tests.
 
-3. **Median of 34ms** shows that most requests (during baseline and post-recovery) were fast. The elevated p(95) of 667ms and avg of 590ms reflect the spike period dragging up the overall statistics.
+3. **The recovery test depends on the same burst dynamics as the spike test.** If the spike overwhelms one worker (uneven distribution), the system enters cascade failure and cannot recover within the observation window.
 
-4. **Max of 60s** indicates some requests during the spike hit the timeout, but this did not cascade into system failure.
-
-**Key thesis metric:** The Grafana time-series graph for this test is critical. The recovery curve — how quickly p95 returns from spike levels to baseline levels — is the primary comparison metric across 1w/2w/4w configurations.
-
-**Conclusion:** With 2 workers, the system survives a 300 VU spike and recovers to normal operation. The recovery test passed all thresholds comfortably.
+**Conclusion:** The recovery test is inconsistent for 2 workers, mirroring the spike test variability. The system sometimes recovers (run 1) and sometimes does not (run 2). This confirms that 2 workers is on the edge of surviving 300 VU bursts.
 
 ---
 
 ## System Behavior Under Failure
 
-### Observed Failure Patterns
+### Observed Failure Patterns (Multi-Run)
 
-| Test | Peak VUs | API Status After | Recovery |
-|------|----------|-----------------|----------|
-| Load (50 VUs) | 50 | Healthy | N/A (no stress) |
-| Stress (300 VUs gradual) | 300 | Healthy | Self-recovered |
-| Spike (300 VUs sudden) | 300 | Alive, elevated latency | Self-recovered |
-| Breakpoint (500 VUs) | 500 | Degraded | Required restart |
-| Soak (30 VUs, 32 min) | 30 | Healthy | N/A |
-| Recovery (300 VU spike) | 300 | Alive | Self-recovered |
+| Test | Peak VUs | Run 1 | Run 2 | Consistent? |
+|------|----------|-------|-------|-------------|
+| Load (50 VUs) | 50 | Healthy | Healthy | Yes |
+| Stress (300 VUs) | 300 | Self-recovered | Self-recovered | Yes |
+| Spike (300 VUs) | 300 | Self-recovered | **Unresponsive** | **No** |
+| Breakpoint (500 VUs) | 500 | Required restart | Required restart | Yes |
+| Soak (30 VUs) | 30 | Healthy | Healthy | Yes |
+| Recovery (300 VU spike) | 300 | Self-recovered | **Timeout cascade** | **No** |
 
-### Comparison with 1 Worker
+### Key Finding: Burst Resilience is Probabilistic
 
-| Test | 1w Recovery | 2w Recovery |
-|------|-------------|-------------|
-| Stress (300 VUs) | 20 min stuck request | Clean completion |
-| Spike (300 VUs) | **No recovery** (required restart) | **Self-recovered** |
-| Breakpoint (500 VUs) | Crashed | Required restart |
-
-The most significant behavioral change: **the spike test no longer kills the API.** With 1 worker, a sudden 300 VU burst caused permanent unresponsiveness. With 2 workers, the system survives and recovers.
+With 2 workers, 300 VU bursts sometimes succeed and sometimes fail. The outcome depends on how the OS distributes connections across the two workers at the moment of the burst. This is fundamentally different from 1 worker (always fails at 300 VU burst) but not yet reliable.
 
 ### Root Cause
 
@@ -528,82 +501,73 @@ The bottleneck is still concurrency (not CPU), but two event loops provide enoug
 
 ---
 
-## 1 Worker vs 2 Worker Comparison
+## 1 Worker vs 2 Worker Comparison (Multi-Run)
 
-### Summary
+### Summary (using most reliable run for each metric)
 
-| Metric | 1w | 2w | Improvement |
-|--------|----|----|-------------|
-| Tests passed | 7/9* | 9/10 | +2 |
-| Baseline p(95) | 62ms | 79ms | -27% (overhead) |
-| Load p(95) | 34ms | 29ms | +15% |
-| Load max | 10.3s | 155ms | +98% |
-| Stress RPS | 29 | 171 | **+490%** |
-| Stress errors | 0.54% | 0.19% | +65% |
-| Spike p(95) | 60s | 1.1s | **+98%** |
-| Spike errors | 9.03% | 0% | **+100%** |
-| Spike result | FAIL | PASS | Fixed |
-| Soak p(95) | 28ms | 28ms | Same |
-| Soak RPS | 7 | 23 | +229% |
-| Breakpoint errors | 9.11% | 5.86% | +36% |
-| Contention p(95) | 48ms | 76ms | **-58% (worse)** |
-| Write-heavy p(95) | 56ms | 40ms | +29% |
+| Metric | 1w | 2w | Reproducible? |
+|--------|----|----|---------------|
+| Load p(95) | 29ms | 32ms | Yes (nearly identical) |
+| Load max | 72ms | 92ms | Yes |
+| Stress p(95) | 457ms | 477ms | Yes (both PASS) |
+| Stress RPS | 82 | 76–171 | **No** (high variance) |
+| Spike result | FAIL | **INCONSISTENT** | No (R1 PASS, R2 FAIL) |
+| Soak p(95) | 25ms | 31ms | Yes |
+| Soak RPS | 23 | 23 | Yes (identical) |
+| Breakpoint | FAIL | FAIL | Yes |
+| Contention p(95) | 42–48ms | 76–141ms | Yes (2w always worse) |
 
-*1w had 9 tests total (no recovery test); spike FAIL + endpoint benchmark PARTIAL FAIL + breakpoint ABORT.
+### Where 2 Workers Reliably Helps
 
-### Where 2 Workers Helps Most
+1. **Stress test consistency** — both runs PASS (p95 477–643ms vs threshold of 1500ms). 1w also passes but with similar p95.
+2. **Correct concurrency control** — `with_for_update()` works correctly across both workers in all runs.
+3. **No stuck connections** — the 1w run 1 stuck connection (20+ minutes) was not seen in any 2w run.
 
-1. **Spike resilience** — the single biggest improvement. System goes from catastrophic failure to passing.
-2. **Stress throughput** — 5.9x RPS increase, enabling the system to serve far more users under overload.
-3. **Tail latency elimination** — no more 10s+ outliers in normal load tests.
-4. **Recovery capability** — system self-recovers after traffic bursts instead of requiring restarts.
+### Where 2 Workers Does NOT Reliably Help
 
-### Where 2 Workers Doesn't Help (or Hurts)
+1. **Spike resilience** — inconsistent (PASS in run 1, FAIL in run 2). NOT a reliable improvement.
+2. **Recovery capability** — inconsistent (same pattern as spike).
+3. **Stress RPS** — the "5.9x super-linear scaling" from run 1 was NOT reproduced. Run 2 shows 76 RPS vs 1w's 82 RPS.
 
-1. **Low-concurrency overhead** — baseline shows 27% higher p(95) at 10 VUs.
-2. **Single-row contention** — 58% higher booking latency in contention test due to increased database lock competition.
-3. **Soak stability** — identical p(95) at 30 VUs (28ms). Stability was already perfect with 1 worker.
+### Where 2 Workers Hurts
 
-### Scaling Efficiency
+1. **Contention latency** — booking p95 consistently higher (76–141ms vs 42–48ms for 1w).
+2. **Low-load overhead** — baseline p95 ~42ms vs 1w's ~45ms (similar, not significant after removing run 1 outlier).
 
-| Metric | Scaling Factor (2w/1w) | Linear (ideal) |
-|--------|----------------------|-----------------|
-| Stress RPS | 5.9x | 2.0x |
-| Soak RPS | 3.3x | 2.0x |
-| Spike survival | 0% → 100% | N/A |
+### Revised Scaling Assessment
 
-The stress test RPS scaling (5.9x) exceeds the theoretical 2x from doubling workers. This super-linear scaling occurs because 1w was severely bottlenecked — the single event loop was spending most of its time context-switching between 300 connections rather than doing useful work. With 2 workers handling 150 connections each, both operate more efficiently.
+| Metric | Run 1 Scaling | Run 2 Scaling | Reliable? |
+|--------|--------------|--------------|-----------|
+| Stress RPS | 5.9x | 0.9x | **No** |
+| Soak RPS | 3.3x | 1.0x | **No** (methodology artifact) |
+| Spike survival | 0→100% | 0→0% | **No** |
+
+**The run 1 scaling claims were largely artifacts** of 1w anomalies (stuck connection, low soak RPS from poor re-seeding). With proper methodology (run 2), 2 workers shows **marginal improvement** over 1 worker for most metrics. The primary reliable difference is contention (worse) and the elimination of stuck connections.
 
 ---
 
-## Key Conclusions — 2 Uvicorn Workers
+## Key Conclusions — 2 Uvicorn Workers (Multi-Run)
 
 ### Performance Envelope
 
-| Metric | Value | Context |
-|--------|-------|---------|
-| Comfortable capacity | 50 VUs / 32 RPS | p(95) < 29ms, 0% errors |
-| Stress capacity | 300 VUs / 171 RPS | p(95) < 643ms, 0.19% errors |
-| Spike survival | 300 VUs sudden | p(95) = 1.1s, 0% errors, self-recovery |
-| Collapse point | 500 VUs sustained | Breakpoint test fails at ~13 min |
+| Metric | Value | Reproducible? |
+|--------|-------|---------------|
+| Comfortable capacity | 50 VUs / 32 RPS, p(95) ~30ms | Yes |
+| Stress capacity | 300 VUs, p(95) ~500ms, PASS | Yes |
+| Spike survival | 300 VUs sudden | **No** (inconsistent) |
+| Collapse point | 500 VUs sustained (breakpoint FAIL) | Yes |
 
-### Architectural Strengths
-1. **Spike resilience** — survives 300 VU sudden bursts that killed 1 worker
-2. **Self-recovery** — returns to normal after overload without manual intervention
-3. **5.9x stress throughput** — handles far more concurrent users under peak load
-4. **Tail latency elimination** — no stuck connections or 10s+ outliers
-5. **Correct concurrency control** — `with_for_update()` works correctly across both workers
+### Architectural Strengths (confirmed across runs)
+1. **Reliable stress handling** — consistently PASS at 300 VUs with <2% errors
+2. **No stuck connections** — max latency capped at 60s timeout, no 20+ minute hangs
+3. **Correct concurrency control** — `with_for_update()` works correctly across both workers
+4. **Stable moderate-load performance** — load, soak, and endpoint benchmark are highly reproducible
 
-### Architectural Weaknesses
-1. **Increased database contention** — multi-worker amplifies row-level lock competition
-2. **Low-load overhead** — ~27% higher latency at 10 VUs vs 1 worker
-3. **Still limited by event loop count** — 500+ sustained VUs overwhelm both workers
-4. **Breakpoint still fails** — 2 event loops insufficient for open-model 500 iter/s load
+### Architectural Weaknesses (confirmed across runs)
+1. **Increased database contention** — booking latency 76–141ms vs 1w's 42–48ms
+2. **Unreliable burst resilience** — 300 VU spike test is probabilistic, not guaranteed
+3. **Breakpoint still fails** — 2 event loops insufficient for open-model 500 iter/s load
+4. **Marginal throughput improvement** — stress RPS not reliably better than 1 worker
 
 ### Implications for 4-Worker Test
-Based on the 2w results, the 4-worker configuration should:
-- Further improve spike/stress resilience (4 independent failure domains)
-- Increase the breakpoint ceiling (potentially passing or lasting longer)
-- Show further increased contention latency (4 processes competing for locks)
-- Provide diminishing returns at low load (more overhead, same workload)
-- Reveal whether scaling is still super-linear or approaching the database bottleneck
+The key question for 4 workers: does adding more failure domains make spike/recovery results more consistent? Or does the CPU-to-worker ratio (4 workers on 2 CPUs) create new problems?
