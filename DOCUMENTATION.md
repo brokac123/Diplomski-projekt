@@ -16,7 +16,7 @@ This project is a master's thesis on **performance testing of web applications**
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
 | API | Python 3.11 + FastAPI | REST API server |
-| ASGI Server | Uvicorn | Serves FastAPI (1 or 4 workers) |
+| ASGI Server | Uvicorn | Serves FastAPI (1, 2, or 4 workers) |
 | Database | PostgreSQL 15 (tuned) | Persistent data storage |
 | ORM | SQLAlchemy | Database access layer |
 | Containerization | Docker + Docker Compose | Service orchestration |
@@ -137,8 +137,22 @@ This project is a master's thesis on **performance testing of web applications**
 ### Race Condition Prevention
 `POST /bookings/` and `PATCH /bookings/{id}/cancel` use `SELECT FOR UPDATE` (row-level locking) to prevent concurrent requests from overselling tickets. This is critical for correctness under load testing.
 
-### Connection Pooling
-SQLAlchemy is configured with `pool_size=10`, `max_overflow=20`, `pool_pre_ping=True` to handle concurrent load without exhausting database connections.
+### Dynamic Connection Pooling
+SQLAlchemy connection pool scales dynamically based on the number of Uvicorn workers to stay under PostgreSQL's `max_connections=100`:
+
+```python
+WORKERS = int(os.environ.get("WORKERS", "1"))
+POOL_SIZE = max(5, 60 // WORKERS)       # 1w=60, 2w=30, 4w=15
+MAX_OVERFLOW = max(5, 30 // WORKERS)    # 1w=30, 2w=15, 4w=7
+```
+
+| Workers | pool_size | max_overflow | Total per worker | Total (all workers) |
+|---------|-----------|-------------|------------------|---------------------|
+| 1 | 60 | 30 | 90 | 90 |
+| 2 | 30 | 15 | 45 | 90 |
+| 4 | 15 | 7 | 22 | 88 |
+
+Each Uvicorn worker forks its own process with its own pool. The formula ensures total connections never exceed 100. `pool_pre_ping=True` and `pool_recycle=1800` are also configured to handle stale connections.
 
 ### Proper HTTP Status Codes
 - `404` — resource not found (user, event, booking)
@@ -174,7 +188,8 @@ tests/
 ├── soak_test.js             # Phase B: Long-duration stability
 ├── breakpoint_test.js       # Phase B: Find max capacity
 ├── contention_test.js       # Phase C: Row-level locking under pressure
-└── read_vs_write_test.js    # Phase C: Read-heavy vs write-heavy comparison
+├── read_vs_write_test.js    # Phase C: Read-heavy vs write-heavy comparison
+└── recovery_test.js         # Phase C: Post-spike recovery measurement
 ```
 
 **helpers.js** provides shared configuration used by all tests:
@@ -231,6 +246,7 @@ All Phase B tests import `trafficMix()` from `realistic_test.js` for consistent 
 |------|------|--------|----------|---------|
 | Contention | `contention_test.js` | 50 VUs, same event | 2 min | Test `SELECT FOR UPDATE` row locking correctness |
 | Read vs Write | `read_vs_write_test.js` | 30 VUs each scenario | ~6 min | Compare read-heavy (90/10) vs write-heavy (40/60) workloads |
+| Recovery | `recovery_test.js` | 30→300→30 VUs, 4min observation | ~6 min | Measure time-to-recovery after sudden overload |
 
 ### 7.5 Thresholds (Pass/Fail Criteria)
 
@@ -246,6 +262,7 @@ Each test has specific thresholds appropriate to the load level:
 | Breakpoint | < 5000ms (abortOnFail) | — |
 | Contention | Booking latency < 3000ms | < 5% |
 | Read vs Write | Read < 500ms, Write < 1500ms | < 5% |
+| Recovery | < 10000ms | < 30% |
 
 ### 7.6 Custom Metrics
 
@@ -484,6 +501,7 @@ Run tests in this order, as each builds on insights from the previous:
 | 7 | Breakpoint | `tests/breakpoint_test.js` | ~2-20 min | Yes | Yes |
 | 8 | Contention | `tests/contention_test.js` | 2 min | Yes | No |
 | 9 | Read vs Write | `tests/read_vs_write_test.js` | ~6 min | Yes | No |
+| 10 | Recovery | `tests/recovery_test.js` | ~6 min | Yes | Yes |
 
 **Important notes:**
 - Always re-seed before tests that create bookings to avoid skewed results from sold-out events
@@ -572,8 +590,8 @@ All containers have explicit resource limits for reproducible test results:
 
 | Container | CPU Limit | Memory Limit | Purpose |
 |-----------|-----------|-------------|---------|
-| db | 2.0 | 1G | PostgreSQL — heaviest service |
-| api | 2.0 | 1G | FastAPI/Uvicorn (needs headroom for 4 workers) |
+| db | 3.0 | 2G | PostgreSQL — heaviest service |
+| api | 4.0 | 2G | FastAPI/Uvicorn (1 CPU per worker in 4w config) |
 | prometheus | 1.0 | 512M | Metrics storage (handles heavy remote write) |
 | grafana | 0.5 | 256M | Dashboard rendering |
 | node-exporter | 0.25 | 128M | System metrics |
@@ -584,10 +602,10 @@ Explicit tuning parameters set via `docker-compose.yml` command to eliminate def
 
 | Parameter | Value | Purpose |
 |-----------|-------|---------|
-| `shared_buffers` | 256MB | Main data cache (default: 128MB) |
+| `shared_buffers` | 512MB | Main data cache (default: 128MB) |
 | `work_mem` | 8MB | Per-operation sort/hash memory (default: 4MB) |
 | `max_connections` | 100 | Connection limit |
-| `effective_cache_size` | 512MB | Query planner hint for OS cache |
+| `effective_cache_size` | 1GB | Query planner hint for OS cache — encourages index scans |
 
 ### 11.7 Prometheus Configuration
 
@@ -617,7 +635,8 @@ Diplomski projekt/
 │   ├── soak_test.js         # Long-duration stability test
 │   ├── breakpoint_test.js   # Max capacity finder
 │   ├── contention_test.js   # Row-locking test
-│   └── read_vs_write_test.js # Workload comparison
+│   ├── read_vs_write_test.js # Workload comparison
+│   └── recovery_test.js     # Post-spike recovery measurement
 ├── monitoring/
 │   ├── prometheus.yml       # Prometheus config
 │   └── grafana/
@@ -630,7 +649,9 @@ Diplomski projekt/
 │   ├── 1w/                   # Auto-saved JSON results for 1-worker tests
 │   ├── 2w/                   # Auto-saved JSON results for 2-worker tests
 │   ├── 4w/                   # Auto-saved JSON results for 4-worker tests
-│   └── 1_worker_results.md   # Test results with 1 Uvicorn worker
+│   ├── 1_worker_results.md   # Test results with 1 Uvicorn worker
+│   ├── 2_worker_results.md   # Test results with 2 Uvicorn workers
+│   └── 4_worker_results.md   # Test results with 4 Uvicorn workers
 ├── docker-compose.yml       # All services
 ├── Dockerfile               # Python container
 ├── seed_data.py             # Faker-based seeding (1000 users, 100 events, 2000 bookings)
@@ -654,13 +675,13 @@ Fix race conditions, add indexes, connection pooling, Docker health checks, remo
 Add new endpoints (stats, upcoming, search, popular, cancel), fix error codes, improve schema, update seed data.
 
 ### Phase 3 — K6 Test Suite ✅ DONE
-9 test types implemented: baseline, endpoint benchmark, load, stress, spike, soak, breakpoint, contention, read vs write. Realistic traffic distribution, custom booking metrics, per-endpoint tagging.
+10 test types implemented: baseline, endpoint benchmark, load, stress, spike, soak, breakpoint, contention, read vs write, recovery. Realistic traffic distribution, custom booking metrics, per-endpoint tagging.
 
 ### Phase 4 — Monitoring & Dashboards ✅ DONE
 K6 → Prometheus remote write integration. Grafana dashboard with 13 panels covering application metrics (K6), business metrics (booking counters), and system resources (Node Exporter CPU/memory).
 
 ### Phase 5 — 1-Worker Test Execution ✅ DONE
-All 9 tests executed with 1 Uvicorn worker. Results documented in `results/1_worker_results.md`.
+All 10 tests executed with 1 Uvicorn worker. Results documented in `results/1_worker_results.md`.
 
 ### Phase 6 — Multi-Worker Comparison 🔄 IN PROGRESS
 Re-run all tests with 1 worker (new methodology), then 2 workers, then 4 workers. Build 3-point scaling curve (1w → 2w → 4w).

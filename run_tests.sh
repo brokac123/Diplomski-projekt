@@ -66,7 +66,7 @@ reseed() {
 restart_api() {
   echo ""
   echo "=== Restarting API (post-crash recovery) ==="
-  docker compose restart api
+  docker compose stop -t 5 api && docker compose up -d api
   echo "Waiting 20s for API to be healthy..."
   sleep 20
 

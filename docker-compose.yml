@@ -9,10 +9,10 @@ services:
       - POSTGRES_DB=${POSTGRES_DB}
     command: >
       postgres
-      -c shared_buffers=256MB
+      -c shared_buffers=512MB
       -c work_mem=8MB
       -c max_connections=100
-      -c effective_cache_size=512MB
+      -c effective_cache_size=1GB
     ports:
       - "5432:5432"
     healthcheck:
@@ -23,8 +23,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "2.0"
-          memory: 1G
+          cpus: "3.0"
+          memory: 2G
 
   api:
     build: .
@@ -32,6 +32,7 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=${DATABASE_URL}
+      - WORKERS=${WORKERS:-1}
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "${WORKERS:-1}"]
     depends_on:
       db:
@@ -46,8 +47,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "2.0"
-          memory: 1G
+          cpus: "4.0"
+          memory: 2G
 
   prometheus:
     image: prom/prometheus

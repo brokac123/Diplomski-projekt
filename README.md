@@ -68,6 +68,7 @@ k6 run --out experimental-prometheus-rw tests/load_test.js
 | Breakpoint | `tests/breakpoint_test.js` | ~20 min |
 | Contention | `tests/contention_test.js` | 2 min |
 | Read vs Write | `tests/read_vs_write_test.js` | ~6 min |
+| Recovery | `tests/recovery_test.js` | ~6 min |
 
 ---
 
@@ -116,13 +117,13 @@ All containers have fixed resource limits to ensure reproducible results:
 
 | Service | CPU | Memory |
 |---------|-----|--------|
-| API | 2.0 | 1 GB |
-| PostgreSQL | 2.0 | 1 GB |
+| API | 4.0 | 2 GB |
+| PostgreSQL | 3.0 | 2 GB |
 | Prometheus | 1.0 | 512 MB |
 | Grafana | 0.5 | 256 MB |
 | Node Exporter | 0.25 | 128 MB |
 
-These limits stay **constant** across all worker configurations (1w, 2w, 4w). Only the `WORKERS` variable changes.
+API gets 4 CPUs so each Uvicorn worker has its own core in the 4-worker config. DB gets 3 CPUs to avoid becoming the bottleneck under high concurrency.
 
 ---
 
