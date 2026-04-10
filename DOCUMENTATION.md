@@ -345,7 +345,7 @@ Location: Dashboards → K6 → K6 Performance Test Results
 
 The dashboard includes a **testid** template variable that filters all K6 metric panels by test run, preventing data overlap between back-to-back tests.
 
-The dashboard contains **15 panels** organized in 4 categories:
+The dashboard contains **17 panels** organized in 4 categories:
 
 #### Application Performance Metrics (from K6)
 
@@ -560,15 +560,16 @@ The script automatically:
 - Adds a 30-second cool-down between tests
 - Saves results to `results/1w/`, `results/2w/`, or `results/4w/`
 
-### 10.3 What to Compare
+### 10.4 What to Compare
 
-Re-run key tests with 4 workers and compare:
-- Response time percentiles (p50, p95, p99)
-- Maximum throughput (RPS)
-- Error rate under stress
-- Breakpoint (max RPS before collapse)
-- CPU utilization (4 workers should use more CPU cores)
-- Whether API crashes under stress/spike tests
+All three configurations (1w, 2w, 4w) have been tested across multiple runs. Key comparison dimensions:
+- Response time percentiles (p50, p95, p99) under high load
+- Maximum throughput (RPS) at breakpoint
+- Error rate under stress and spike conditions
+- CPU utilization (4 workers uses more CPU cores)
+- Run-to-run consistency — high-load tests (stress, spike, breakpoint) show significant variance between runs; low-load tests (load, soak, contention) are deterministic
+
+See `results/test_run_history.md` for a summary of each run and observed scaling patterns.
 
 ---
 
@@ -651,7 +652,8 @@ Diplomski projekt/
 │   ├── 4w/                   # Auto-saved JSON results for 4-worker tests
 │   ├── 1_worker_results.md   # Test results with 1 Uvicorn worker
 │   ├── 2_worker_results.md   # Test results with 2 Uvicorn workers
-│   └── 4_worker_results.md   # Test results with 4 Uvicorn workers
+│   ├── 4_worker_results.md   # Test results with 4 Uvicorn workers
+│   └── test_run_history.md   # Cross-run summary — tracks scaling pattern per iteration
 ├── docker-compose.yml       # All services
 ├── Dockerfile               # Python container
 ├── seed_data.py             # Faker-based seeding (1000 users, 100 events, 2000 bookings)
@@ -678,13 +680,13 @@ Add new endpoints (stats, upcoming, search, popular, cancel), fix error codes, i
 10 test types implemented: baseline, endpoint benchmark, load, stress, spike, soak, breakpoint, contention, read vs write, recovery. Realistic traffic distribution, custom booking metrics, per-endpoint tagging.
 
 ### Phase 4 — Monitoring & Dashboards ✅ DONE
-K6 → Prometheus remote write integration. Grafana dashboard with 13 panels covering application metrics (K6), business metrics (booking counters), and system resources (Node Exporter CPU/memory).
+K6 → Prometheus remote write integration. Grafana dashboard with 17 panels covering application metrics (K6), business metrics (booking counters), and system resources (Node Exporter CPU/memory).
 
 ### Phase 5 — 1-Worker Test Execution ✅ DONE
 All 10 tests executed with 1 Uvicorn worker. Results documented in `results/1_worker_results.md`.
 
 ### Phase 6 — Multi-Worker Comparison 🔄 IN PROGRESS
-Re-run all tests with 1 worker (new methodology), then 2 workers, then 4 workers. Build 3-point scaling curve (1w → 2w → 4w).
+All three configurations (1w, 2w, 4w) tested across multiple runs. Run 1 showed a U-curve anomaly (2w worst); Run 2 showed roughly linear scaling (4w > 2w > 1w). Additional runs in progress to confirm the consistent pattern. See `results/test_run_history.md`.
 
 ### Phase 7 — Analysis & Thesis ⏳ PLANNED
 Analyze results, identify bottlenecks, draw conclusions, write thesis.

@@ -102,15 +102,6 @@ Results are automatically saved to `results/1w/`, `results/2w/`, or `results/4w/
 
 ---
 
-## Remote Server Testing
-
-To test against a remote API:
-```bash
-k6 run -e BASE_URL=http://your-server:8000 tests/load_test.js
-```
-
----
-
 ## Resource Limits
 
 All containers have fixed resource limits to ensure reproducible results:
