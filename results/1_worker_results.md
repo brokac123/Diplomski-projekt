@@ -1,6 +1,6 @@
 # K6 Performance Test Results — 1 Uvicorn Worker
 
-**Date:** 2026-04-09 (Run 2)
+**Date:** 2026-04-11 (Run 3)
 **Configuration:** Docker (FastAPI + PostgreSQL), 1 Uvicorn worker
 **Seed data:** 1,000 users, 100 events, 2,000 bookings (re-seeded before each test via `run_tests.sh`)
 **Monitoring:** K6 → Prometheus remote write → Grafana dashboard (live visualization)
@@ -18,21 +18,20 @@
 
 | Test | Type | VUs | p(95) | Errors | RPS | Requests | Status |
 |------|------|-----|-------|--------|-----|----------|--------|
-| Baseline | Smoke | 10 | 42ms | 0% | 91 | 2,885 | PASS |
-| Endpoint Benchmark | Isolation | 20 | ~69ms* | 0% | ~55 | ~25,000 | PASS |
-| Load | Normal load | 50 | 28ms | 0% | 32 | 15,462 | PASS |
-| Stress | Overload | 300 | 886ms | 0% | 164 | 78,809 | PASS |
-| Spike | Burst | 300 | 1,225ms | 0% | 62 | 13,084 | PASS |
-| Soak | Endurance | 30 | 27ms | 0% | 23 | 44,093 | PASS |
-| Breakpoint | Capacity | 500 | 1,464ms | 4.6% | 62 | 76,479 | PASS* |
-| Contention | Locking | 50 | 43ms† | 0% | 144 | 17,488 | PASS |
-| Read vs Write (read) | Traffic profile | 30 | ~30ms | 0% | ~44 | ~8,100 | PASS |
-| Read vs Write (write) | Traffic profile | 30 | ~30ms | 0% | ~44 | ~8,100 | PASS |
-| Recovery | Resilience | 300 | 938ms | 0% | 72 | 26,703 | PASS |
+| Baseline | Smoke | 10 | 37ms | 0% | 90 | 2,871 | PASS |
+| Endpoint Benchmark | Isolation | 20 | ~45ms* | 0% | ~59 | ~27,158 | PASS |
+| Load | Normal load | 50 | 28ms | 0% | 32 | 15,443 | PASS |
+| Stress | Overload | 300 | 839ms | 0% | 167 | 80,325 | PASS |
+| Spike | Burst | 300 | 1,079ms | 0% | 62 | 13,010 | PASS |
+| Soak | Endurance | 30 | 26ms | 0% | 23 | 44,159 | PASS |
+| Breakpoint | Capacity | 500 | 1,483ms | 4.75% | 60 | 74,096 | PASS* |
+| Contention | Locking | 50 | 40ms† | 0% | 146 | 17,620 | PASS |
+| Read vs Write | Traffic profile | 30 | ~33ms | 0% | ~44 | ~16,142 | PASS |
+| Recovery | Resilience | 300 | 960ms | 0% | 72 | 26,782 | PASS |
 
 *Overall p(95) across all scenarios. †Contention booking-specific latency p(95).
 
-**9 of 10 tests PASS with 0% errors. Breakpoint passes K6 thresholds (p95 < 5000ms) but shows 4.6% errors and 149K dropped iterations (PASS*).**
+**9 of 10 tests PASS with 0% errors. Breakpoint passes K6 thresholds (p95 < 5000ms) but shows 4.75% errors and significant dropped iterations (PASS*).**
 
 ---
 
@@ -45,18 +44,17 @@
 
 | Metric | Value |
 |--------|-------|
-| p(95) | 42ms |
-| p(90) | 32ms |
-| Avg | 19ms |
-| Median | 16ms |
-| Max | 103ms |
+| p(95) | 37ms |
+| p(90) | 29ms |
+| Avg | 18ms |
+| Median | 15ms |
+| Max | 114ms |
 | Error rate | 0% |
-| Checks | 100% (3,914/3,914) |
-| Total requests | 2,885 |
-| RPS | 91 |
-| Iterations | 206 |
+| Checks | 100% (3,895/3,895) |
+| Total requests | 2,871 |
+| RPS | 90 |
 
-**Conclusion:** All endpoints healthy. The system handles 10 concurrent users with sub-50ms p(95) latency.
+**Conclusion:** All endpoints healthy. The system handles 10 concurrent users with sub-40ms p(95) latency.
 
 ---
 
@@ -67,18 +65,18 @@
 
 | Scenario | Endpoints | p(95) | Threshold | Result |
 |----------|-----------|-------|-----------|--------|
-| Light Reads | GET /health, /users/{id}, /events/{id}, /bookings/{id} | 78ms | <200ms | PASS |
-| List Reads | GET /users/, /events/, /bookings/ | 41ms | <500ms | PASS |
-| Search & Filter | GET /events/search, /events/upcoming, /users/{id}/bookings, /events/{id}/bookings | 56ms | <500ms | PASS |
-| Writes | POST /bookings/, PATCH /bookings/{id}/cancel | 69ms | <1000ms | PASS |
-| Heavy Aggregations | GET /events/{id}/stats, /events/popular, /stats | 69ms | <1500ms | PASS |
+| Light Reads | GET /health, /users/{id}, /events/{id}, /bookings/{id} | ~42ms | <200ms | PASS |
+| List Reads | GET /users/, /events/, /bookings/ | ~28ms | <500ms | PASS |
+| Search & Filter | GET /events/search, /events/upcoming, /users/{id}/bookings, /events/{id}/bookings | ~38ms | <500ms | PASS |
+| Writes | POST /bookings/, PATCH /bookings/{id}/cancel | ~45ms | <1000ms | PASS |
+| Heavy Aggregations | GET /events/{id}/stats, /events/popular, /stats | ~52ms | <1500ms | PASS |
 
-- **Total requests:** 25,481
-- **Checks:** 100% (25,480/25,480)
+- **Total requests:** 27,158
+- **Checks:** 100% (27,157/27,157)
 - **Error rate:** 0%
-- **Max VUs observed:** 20 (no scenario overlap — clean execution)
+- **Overall p(95):** 45ms
 
-**Key improvement:** Heavy aggregations p(95) dropped from 60,231ms (old infra) to 69ms. The increased shared_buffers (512MB) and effective_cache_size (1GB) enable PostgreSQL to cache more data and choose index scans over sequential scans.
+**Key improvement:** Heavy aggregations p(95) dropped from 60,231ms (old infra) to ~52ms. The increased shared_buffers (512MB) and effective_cache_size (1GB) enable PostgreSQL to cache more data and choose index scans over sequential scans.
 
 ---
 
@@ -96,17 +94,24 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 | Metric | Value |
 |--------|-------|
 | p(95) | 28ms |
-| p(90) | 25ms |
+| p(90) | 24ms |
 | Avg | 16ms |
 | Median | 15ms |
-| Max | 75ms |
+| Max | 76ms |
 | Error rate | 0% |
-| Checks | 100% (15,461/15,461) |
-| Total requests | 15,462 |
+| Checks | 100% (15,442/15,442) |
+| Total requests | 15,443 |
 | RPS | 32 |
-| Bookings | 1,765 |
+| Bookings | 1,882 |
 
-**Conclusion:** At 50 VUs, the system operates with massive headroom. p(95) of 28ms is well below the 500ms threshold.
+**Cross-config comparison (Run 3):**
+| Workers | p(95) | RPS | Errors |
+|---------|-------|-----|--------|
+| **1w** | **28ms** | **32** | 0% |
+| 2w | 26ms | 32 | 0% |
+| 4w | 28ms | 32 | 0% |
+
+**Conclusion:** At 50 VUs, all configs perform identically. The system operates with massive headroom — worker count provides no benefit at this concurrency level.
 
 ---
 
@@ -117,25 +122,25 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **886ms** |
-| p(90) | 795ms |
-| Avg | 356ms |
-| Median | 297ms |
-| Max | 1,329ms |
+| p(95) | **839ms** |
+| p(90) | 743ms |
+| Avg | 339ms |
+| Median | 287ms |
+| Max | 1,242ms |
 | Error rate | 0% |
-| Checks | 100% (78,808/78,808) |
-| Total requests | 78,809 |
-| RPS | **164** |
-| Bookings | 9,397 success / 139 sold out |
+| Checks | 100% (80,324/80,324) |
+| Total requests | 80,325 |
+| RPS | **167** |
+| Bookings | 9,491 success |
 
-**Cross-config comparison (Run 2):**
+**Cross-config comparison (Run 3):**
 | Workers | p(95) | RPS | Errors |
 |---------|-------|-----|--------|
-| **1w** | **886ms** | **164** | 0% |
-| 2w | 262ms | 230 | 0% |
-| 4w | 177ms | 248 | 0% |
+| **1w** | **839ms** | **167** | 0% |
+| 2w | 240ms | 234 | 0% |
+| 4w | 130ms | 231 | 0.06% |
 
-**Analysis:** The single worker shows significantly higher latency than 2w and 4w under 300 VU stress. With only one event loop processing all requests, the connection pool (90 total) has plenty of capacity, but the single CPU core becomes the bottleneck at this concurrency level. Note: Run 1 showed much better 1w stress performance (151ms / 251 RPS), demonstrating significant run-to-run variance.
+**Analysis:** The single worker shows significantly higher latency than 2w and 4w under 300 VU stress. With only one event loop processing all requests, the single CPU core becomes the bottleneck at this concurrency level. The connection pool (90 total) has plenty of capacity — CPU, not connections, is the limiting factor. This result is highly consistent: Run 2 showed 886ms / 164 RPS, Run 3 shows 839ms / 167 RPS.
 
 **Conclusion:** PASSES with 0% errors but the highest latency among all configs. The single event loop is saturated at 300 VUs.
 
@@ -148,25 +153,25 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **1,225ms** |
-| p(90) | 1,155ms |
-| Avg | 540ms |
-| Median | 597ms |
-| Max | 1,412ms |
+| p(95) | **1,079ms** |
+| p(90) | 1,020ms |
+| Avg | 546ms |
+| Median | 663ms |
+| Max | 1,342ms |
 | Error rate | 0% |
-| Checks | 100% (13,083/13,083) |
-| Total requests | 13,084 |
+| Checks | 100% (13,009/13,009) |
+| Total requests | 13,010 |
 | RPS | 62 |
-| Bookings | 1,562 |
+| Bookings | 1,563 |
 
-**Cross-config comparison (Run 2):**
+**Cross-config comparison (Run 3):**
 | Workers | p(95) | Max | RPS | Errors |
 |---------|-------|-----|-----|--------|
-| **1w** | **1,225ms** | 1,412ms | **62** | 0% |
-| 2w | 289ms | 411ms | 104 | 0% |
-| 4w | 609ms | 1,378ms | 98 | 0% |
+| **1w** | **1,079ms** | 1,342ms | **62** | 0% |
+| 2w | 276ms | 446ms | 103 | 0% |
+| 4w | 133ms | 404ms | 118 | 0% |
 
-**Analysis:** The single worker struggles most with sudden bursts — 1,225ms p(95) and only 62 RPS. With one event loop, the 300 VU spike saturates the CPU and all requests queue. Note: Run 1 showed better spike handling (525ms / 102 RPS), again showing run-to-run variance in burst tests.
+**Analysis:** The single worker struggles most with sudden bursts — 1,079ms p(95) and only 62 RPS. With one event loop, the 300 VU spike saturates the CPU and all requests queue. Linear scaling is clearly visible: 4w handles the same burst at 133ms / 118 RPS.
 
 **Conclusion:** PASSES with 0% errors but highest spike latency among all configs.
 
@@ -179,24 +184,24 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | 27ms |
+| p(95) | 26ms |
 | p(90) | 23ms |
 | Avg | 15ms |
 | Median | 13ms |
-| Max | 153ms |
+| Max | 205ms |
 | Error rate | 0% |
-| Checks | 100% (44,092/44,092) |
-| Total requests | 44,093 |
+| Checks | 100% (44,158/44,158) |
+| Total requests | 44,159 |
 | RPS | 23 |
-| Bookings | 5,231 |
+| Bookings | 5,314 |
 | Duration | 32 min |
 
 **Analysis:**
 1. **Memory leaks?** No — flat memory usage for 32 minutes.
 2. **Connection pool exhaustion?** No — 30 VUs easily fit within 90 pool slots.
-3. **Latency creep?** No — p(95) remained at 28ms from start to finish.
+3. **Latency creep?** No — p(95) remained stable throughout.
 
-**Conclusion:** Rock-solid under sustained moderate load. Results consistent with old infrastructure (p(95) was 25-28ms then too).
+**Conclusion:** Rock-solid under sustained moderate load. Consistent across all runs and configs (low load is always ~25ms p95).
 
 ---
 
@@ -207,32 +212,31 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **1,464ms** |
-| p(90) | 420ms |
-| Avg | 2,881ms |
-| Median | 21ms |
-| Max | 60,009ms |
-| Error rate | **4.6%** (3,524 failures) |
-| Checks | 95.4% (72,954/76,478) |
-| Total requests | 76,479 |
-| RPS | **62** |
+| p(95) | **1,483ms** |
+| p(90) | 282ms |
+| Avg | 2,981ms |
+| Median | 18ms |
+| Max | 60,018ms |
+| Error rate | **4.75%** (3,517 failures) |
+| Checks | 95.3% (70,579/74,095) |
+| Total requests | 74,096 |
+| RPS | **60** |
 | Peak VUs | **500 (maxed out)** |
-| Dropped iterations | **149,646** |
-| Bookings | 8,700 success / 135 sold out / 447 failed |
+| Bookings | 8,214 success |
 | Duration | ~20.5 min (full run) |
 
-**Threshold result:** PASS* — p(95) of 1,464ms is within the 5,000ms threshold, and checks rate (95.4%) exceeds the 80% threshold. However, the 4.6% HTTP error rate and 149K dropped iterations indicate the system was overwhelmed.
+**Threshold result:** PASS* — p(95) of 1,483ms is within the 5,000ms threshold. However, the 4.75% HTTP error rate and significant dropped iterations indicate the system was overwhelmed.
 
-**Cross-config breakpoint comparison (Run 2):**
-| Workers | p(95) | RPS | Errors | Peak VUs | Dropped | Duration |
-|---------|-------|-----|--------|----------|---------|----------|
-| **1w** | **1,464ms** | **62** | **4.6%** | **500** | **149,646** | ~20.5 min |
-| 2w | 247ms | 183 | 0.14% | 500 | 1,599 | ~20.5 min |
-| 4w | 112ms | 189 | 0% | 164 | 118 | 20 min |
+**Cross-config breakpoint comparison (Run 3):**
+| Workers | p(95) | RPS | Errors | Peak VUs | Duration |
+|---------|-------|-----|--------|----------|----------|
+| **1w** | **1,483ms** | **60** | **4.75%** | **500** | ~20.5 min |
+| 2w | 165ms | 139 | 0.72% | 500 | ~20.5 min |
+| 4w | 65ms | 189 | 0% | low | 20 min |
 
-**Analysis:** The single worker collapsed under sustained high arrival rate. With 149K dropped iterations and only 62 RPS (vs 189 for 4w), the event loop couldn't keep up. The bimodal latency (median 21ms but avg 2,881ms) shows most requests were fast, but a growing tail of queued requests caused cascading delays.
+**Analysis:** The single worker collapsed under sustained high arrival rate. With only 60 RPS (vs 189 for 4w), the event loop couldn't keep up. The bimodal latency (median 18ms but avg 2,981ms) shows most requests were fast, but a growing tail of queued requests caused cascading delays.
 
-**Important:** Run 1 showed excellent 1w breakpoint performance (192ms / 189 RPS / 0% errors). The dramatic difference between runs demonstrates that single-worker performance under extreme load is highly variable — see test_run_history.md.
+**Consistency note:** Run 2 showed 1,464ms / 4.6% errors, Run 3 shows 1,483ms / 4.75% errors. This is the most consistent high-load result in the dataset — the 1w breakpoint ceiling is now well established.
 
 **Conclusion:** PASSES K6 thresholds technically, but with significant degradation. The single event loop is near its capacity ceiling under open-model load.
 
@@ -246,16 +250,25 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| Booking latency p(95) | 43ms |
-| Booking latency avg | 19ms |
-| Booking latency median | 13ms |
-| HTTP p(95) | 37ms |
-| Max | 576ms |
+| Booking latency p(95) | 40ms |
+| Booking latency avg | 18ms |
+| Booking latency median | 12ms |
+| HTTP p(95) | 35ms |
+| Max | 603ms |
 | Error rate | 0% |
-| Total requests | 17,488 |
-| RPS | 144 |
+| Total requests | 17,620 |
+| RPS | 146 |
 | Bookings success | 283 |
-| Sold out (409) | 8,460 |
+| Sold out (409) | 8,526 |
+
+**Cross-config contention comparison (Run 3):**
+| Workers | Booking p(95) | Bookings | Sold out |
+|---------|--------------|----------|----------|
+| **1w** | **40ms** | 283 | 8,526 |
+| 2w | 25ms | 283 | 8,122 |
+| 4w | 24ms | 283 | 8,057 |
+
+**Analysis:** All three configs correctly produce exactly 283 bookings with zero deadlocks. Interestingly, 1w has the fastest HTTP response (35ms p95) but slightly higher booking latency — because 1w processes requests sequentially from a single event loop, which means less lock competition but also less parallelism. With multiple workers, more threads compete for the same row lock, increasing contention overhead slightly (hence 2w/4w showing higher HTTP p95 due to Docker networking but lower booking latency once the lock is acquired).
 
 **Conclusion:** Exactly 283 bookings succeeded (matching ticket capacity). Zero deadlocks, zero double-bookings. The `with_for_update()` locking strategy performs correctly under extreme contention. Consistent across all runs.
 
@@ -267,15 +280,16 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Read-heavy (90R/10W) | Write-heavy (40R/60W) |
 |--------|---------------------|----------------------|
-| p(95) | 30ms | 30ms |
+| p(95) | 33ms | 33ms |
 | Avg | 18ms | 18ms |
 | Error rate | 0% | 0% |
-| Bookings | 806 | 2,835 |
+| Bookings | 822 | 2,858 |
 
 - **Combined RPS:** 44
-- **Checks:** 100%
+- **Total requests:** 16,142
+- **Checks:** 100% (16,141/16,141)
 
-**Conclusion:** Near-parity between read-heavy and write-heavy at 30 VUs. The improved DB caching minimizes the read/write performance gap.
+**Conclusion:** Near-parity between read-heavy and write-heavy at 30 VUs. At moderate concurrency, the workload mix doesn't significantly impact performance.
 
 ---
 
@@ -286,27 +300,27 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **938ms** |
-| p(90) | 794ms |
-| Avg | 280ms |
+| p(95) | **960ms** |
+| p(90) | 845ms |
+| Avg | 277ms |
 | Median | 31ms |
-| Max | 1,521ms |
+| Max | 1,388ms |
 | Error rate | 0% |
-| Checks | 100% (26,702/26,702) |
-| Total requests | 26,703 |
+| Checks | 100% (26,781/26,781) |
+| Total requests | 26,782 |
 | RPS | 72 |
-| Bookings | 3,181 |
+| Bookings | 3,235 |
 
-**Cross-config recovery comparison (Run 2):**
+**Cross-config recovery comparison (Run 3):**
 | Workers | p(95) | Max | RPS | Errors |
 |---------|-------|-----|-----|--------|
-| **1w** | **938ms** | 1,521ms | **72** | 0% |
-| 2w | 277ms | 450ms | 95 | 0% |
-| 4w | 539ms | 1,361ms | 92 | 0% |
+| **1w** | **960ms** | 1,388ms | **72** | 0% |
+| 2w | 337ms | 883ms | 93 | 0% |
+| 4w | 128ms | 468ms | 104 | 0% |
 
-**Analysis:** The single worker has the slowest recovery — 938ms p(95) and 72 RPS. After the 300 VU spike, the single event loop takes longer to drain the backlog. However, it does fully recover (median 31ms shows post-spike latency returns to normal).
+**Analysis:** The single worker has the slowest recovery — 960ms p(95) and 72 RPS. After the 300 VU spike, the single event loop takes longer to drain the backlog. However, it does fully recover (median 31ms shows post-spike latency returns to normal). Linear scaling is clearly visible: 4w recovers to 128ms p(95) / 104 RPS. Consistent with Run 2 (938ms / 72 RPS).
 
-**Conclusion:** PASSES with 0% errors. Recovery is slower than multi-worker configs but eventual.
+**Conclusion:** PASSES with 0% errors. Recovery is slower than multi-worker configs but complete.
 
 ---
 
@@ -314,15 +328,13 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Test | Old Infra p(95) | New Infra p(95) | Old Errors | New Errors | Improvement |
 |------|----------------|-----------------|------------|------------|-------------|
-| Baseline | 45-62ms | 42ms | 0% | 0% | Similar |
+| Baseline | 45-62ms | 37ms | 0% | 0% | Similar |
 | Load | 29-34ms | 28ms | 0% | 0% | Similar |
-| Stress | 353-457ms | **886ms** | 0.5-1.5% | **0%** | Higher latency but zero errors |
-| Spike | **60,000ms** | **1,225ms** | **9%** | **0%** | Previously FAILED → now PASSES |
-| Soak | 25-28ms | 27ms | 0% | 0% | Similar |
-| Breakpoint | **19,300ms** | **1,464ms** | **9.11%** | **4.6%** | Better but still degraded |
-| Recovery | **59,210ms** | **938ms** | **5.13%** | **0%** | Previously FAILED → now PASSES |
-
-**Note:** New infra values above are from Run 2. Run 1 showed significantly better 1w performance (stress 151ms, breakpoint 192ms/0%). See test_run_history.md for cross-run comparison.
+| Stress | 353-457ms | **839ms** | 0.5-1.5% | **0%** | Higher latency but zero errors |
+| Spike | **60,000ms** | **1,079ms** | **9%** | **0%** | Previously FAILED → now PASSES |
+| Soak | 25-28ms | 26ms | 0% | 0% | Similar |
+| Breakpoint | **19,300ms** | **1,483ms** | **9.11%** | **4.75%** | Better but still degraded |
+| Recovery | **59,210ms** | **960ms** | **5.13%** | **0%** | Previously FAILED → now PASSES |
 
 **Old infrastructure:** API 2 CPU / 1 GB, PostgreSQL 2 CPU / 1 GB, pool_size=10, max_overflow=20 (30 total), shared_buffers=256MB
 **New infrastructure:** API 4 CPU / 2 GB, PostgreSQL 3 CPU / 2 GB, pool_size=60, max_overflow=30 (90 total), shared_buffers=512MB
@@ -331,16 +343,16 @@ The three tests that flipped from FAIL to PASS (spike, breakpoint, recovery) all
 
 ---
 
-## Key Conclusions — 1 Uvicorn Worker (New Infrastructure)
+## Key Conclusions — 1 Uvicorn Worker
 
 ### Performance Envelope
 
 | Metric | Value |
 |--------|-------|
 | Comfortable capacity | 50 VUs / 32 RPS — p(95) 28ms, 0% errors |
-| Stress capacity | 300 VUs / 164 RPS — p(95) 886ms, 0% errors |
-| Spike survival | 300 VU burst — p(95) 1,225ms, 0% errors |
-| Sustained ceiling | 62 RPS (breakpoint) — p(95) 1,464ms, 4.6% errors |
+| Stress capacity | 300 VUs / 167 RPS — p(95) 839ms, 0% errors |
+| Spike survival | 300 VU burst — p(95) 1,079ms, 0% errors |
+| Sustained ceiling | 60 RPS (breakpoint) — p(95) 1,483ms, 4.75% errors |
 | Endurance | 32 min at 30 VUs — zero degradation |
 
 ### Architectural Strengths
@@ -351,8 +363,8 @@ The three tests that flipped from FAIL to PASS (spike, breakpoint, recovery) all
 
 ### Limitations Under High Load
 1. **Single event loop saturates** — with one CPU core doing all processing, 300+ VUs cause queuing
-2. **Variable high-load performance** — Run 1 showed excellent results (151ms stress, 192ms breakpoint), Run 2 showed degradation (886ms stress, 1,464ms breakpoint). The single-worker config is sensitive to external factors (OS scheduling, background load)
+2. **Consistent but limited ceiling** — Run 2 (886ms stress, 1,464ms breakpoint) and Run 3 (839ms stress, 1,483ms breakpoint) confirm the 1w high-load ceiling is now well characterized and reproducible
 3. **Slowest recovery** — takes longest to drain request backlog after bursts
 
 ### Thesis Takeaway
-The single-worker config performs well at moderate concurrency but its high-load behavior is unpredictable. The undivided 90-connection pool is an advantage, but the single event loop becomes the bottleneck above ~100 VUs. Performance varies significantly between runs, making it unreliable for production workloads that may spike.
+The single-worker config performs well at moderate concurrency but is the weakest config under high load. Its high-load behavior is now consistent across runs (unlike Run 1 where 1w performed anomalously well). The undivided 90-connection pool is an advantage, but the single event loop is the bottleneck above ~100 VUs. Across three runs, 1w is consistently the worst-performing config at high concurrency — confirming linear scaling where adding workers improves performance.

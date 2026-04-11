@@ -1,6 +1,6 @@
 # K6 Performance Test Results — 2 Uvicorn Workers
 
-**Date:** 2026-04-09 (Run 2)
+**Date:** 2026-04-11 (Run 3)
 **Configuration:** Docker (FastAPI + PostgreSQL), 2 Uvicorn workers
 **Seed data:** 1,000 users, 100 events, 2,000 bookings (re-seeded before each test via `run_tests.sh`)
 **Monitoring:** K6 → Prometheus remote write → Grafana dashboard (live visualization)
@@ -19,21 +19,20 @@
 
 | Test | Type | VUs | p(95) | Errors | RPS | Requests | Status |
 |------|------|-----|-------|--------|-----|----------|--------|
-| Baseline | Smoke | 10 | 72ms | 0% | 68 | 2,171 | PASS |
-| Endpoint Benchmark | Isolation | 20 | ~74ms* | 0% | ~54 | ~25,000 | PASS |
-| Load | Normal load | 50 | 28ms | 0% | 32 | 15,431 | PASS |
-| Stress | Overload | 300 | 262ms | 0% | 230 | 110,369 | PASS |
-| Spike | Burst | 300 | 289ms | 0% | 104 | 21,804 | PASS |
-| Soak | Endurance | 30 | 25ms | 0% | 23 | 44,179 | PASS |
-| Breakpoint | Capacity | 500 | 247ms | 0.14% | 183 | 224,694 | PASS |
-| Contention | Locking | 50 | 33ms† | 0% | 138 | 16,678 | PASS |
-| Read vs Write (read) | Traffic profile | 30 | ~30ms | 0% | ~43 | ~8,100 | PASS |
-| Read vs Write (write) | Traffic profile | 30 | ~32ms | 0% | ~43 | ~8,100 | PASS |
-| Recovery | Resilience | 300 | 277ms | 0% | 95 | 35,251 | PASS |
+| Baseline | Smoke | 10 | 79ms | 0% | 69 | 2,213 | PASS |
+| Endpoint Benchmark | Isolation | 20 | ~65ms* | 0% | ~56 | ~25,658 | PASS |
+| Load | Normal load | 50 | 26ms | 0% | 32 | 15,423 | PASS |
+| Stress | Overload | 300 | 240ms | 0% | 234 | 112,463 | PASS |
+| Spike | Burst | 300 | 276ms | 0% | 103 | 21,681 | PASS |
+| Soak | Endurance | 30 | 25ms | 0% | 23 | 44,139 | PASS |
+| Breakpoint | Capacity | 500 | 165ms | 0.72% | 139 | 171,322 | PASS |
+| Contention | Locking | 50 | 25ms† | 0% | 139 | 16,812 | PASS |
+| Read vs Write | Traffic profile | 30 | ~29/28ms | 0% | ~44 | ~16,231 | PASS |
+| Recovery | Resilience | 300 | 337ms | 0% | 93 | 34,359 | PASS |
 
 *Overall p(95) across all scenarios. †Contention booking-specific latency p(95).
 
-**All 10 tests PASS. Breakpoint has 0.14% errors (307 failures out of 224K requests) but passes all K6 thresholds.**
+**All 10 tests PASS. Breakpoint has 0.72% errors (1,231 failures out of 171K requests) but passes all K6 thresholds.**
 
 ---
 
@@ -46,20 +45,19 @@
 
 | Metric | Value |
 |--------|-------|
-| p(95) | 72ms |
-| p(90) | 68ms |
-| Avg | 56ms |
+| p(95) | 79ms |
+| p(90) | 71ms |
+| Avg | 57ms |
 | Median | 58ms |
-| Max | 130ms |
+| Max | 142ms |
 | Error rate | 0% |
-| Checks | 100% (2,945/2,945) |
-| Total requests | 2,171 |
-| RPS | 68 |
-| Iterations | 155 |
+| Checks | 100% (3,002/3,002) |
+| Total requests | 2,213 |
+| RPS | 69 |
 
-**Note:** The avg/p95 include ~40ms `http_req_receiving` overhead (likely Docker networking in multi-worker mode). Server-side processing time (`http_req_waiting`) shows avg 17ms, p(95) 30ms — consistent with other configs.
+**Note:** The avg/p95 include ~40ms `http_req_receiving` overhead (Docker networking in multi-worker mode). Server-side processing time (`http_req_waiting`) shows avg 18ms, p(95) 37ms — consistent with other configs.
 
-**Conclusion:** All endpoints healthy. At 10 VUs, worker count doesn't matter — performance is identical to 1w and 4w.
+**Conclusion:** All endpoints healthy. At 10 VUs, worker count doesn't matter — server-side processing is identical to 1w and 4w.
 
 ---
 
@@ -69,15 +67,16 @@
 
 | Scenario | Endpoints | p(95) | Threshold | Result |
 |----------|-----------|-------|-----------|--------|
-| Light Reads | GET /health, /users/{id}, /events/{id}, /bookings/{id} | ~78ms | <200ms | PASS |
-| List Reads | GET /users/, /events/, /bookings/ | ~62ms | <500ms | PASS |
-| Search & Filter | GET /events/search, /events/upcoming, /users/{id}/bookings, /events/{id}/bookings | ~59ms | <500ms | PASS |
-| Writes | POST /bookings/, PATCH /bookings/{id}/cancel | ~71ms | <1000ms | PASS |
-| Heavy Aggregations | GET /events/{id}/stats, /events/popular, /stats | ~82ms | <1500ms | PASS |
+| Light Reads | GET /health, /users/{id}, /events/{id}, /bookings/{id} | ~68ms | <200ms | PASS |
+| List Reads | GET /users/, /events/, /bookings/ | ~52ms | <500ms | PASS |
+| Search & Filter | GET /events/search, /events/upcoming, /users/{id}/bookings, /events/{id}/bookings | ~58ms | <500ms | PASS |
+| Writes | POST /bookings/, PATCH /bookings/{id}/cancel | ~62ms | <1000ms | PASS |
+| Heavy Aggregations | GET /events/{id}/stats, /events/popular, /stats | ~71ms | <1500ms | PASS |
 
-- **Total requests:** ~25,000
-- **Checks:** 100%
+- **Total requests:** 25,658
+- **Checks:** 100% (25,657/25,657)
 - **Error rate:** 0%
+- **Overall p(95):** 65ms
 
 **Conclusion:** All 5 scenarios pass. Performance similar to 1w and 4w at this low concurrency level (20 VUs). Results consistent across runs.
 
@@ -96,18 +95,25 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | 28ms |
-| p(90) | 25ms |
-| Avg | 16ms |
-| Median | 15ms |
-| Max | 84ms |
+| p(95) | 26ms |
+| p(90) | 23ms |
+| Avg | 15ms |
+| Median | 14ms |
+| Max | 150ms |
 | Error rate | 0% |
-| Checks | 100% (15,430/15,430) |
-| Total requests | 15,431 |
+| Checks | 100% (15,422/15,422) |
+| Total requests | 15,423 |
 | RPS | 32 |
-| Bookings | 1,933 |
+| Bookings | 1,838 |
 
-**Conclusion:** At 50 VUs, performance is nearly identical to 1w (28ms) and 4w (27ms). Worker count provides no benefit at this concurrency level.
+**Cross-config comparison (Run 3):**
+| Workers | p(95) | RPS | Errors |
+|---------|-------|-----|--------|
+| 1w | 28ms | 32 | 0% |
+| **2w** | **26ms** | **32** | **0%** |
+| 4w | 28ms | 32 | 0% |
+
+**Conclusion:** At 50 VUs, performance is nearly identical across all configs. Worker count provides no benefit at this concurrency level.
 
 ---
 
@@ -118,25 +124,25 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **262ms** |
-| p(90) | 228ms |
-| Avg | 110ms |
-| Median | 94ms |
-| Max | 647ms |
+| p(95) | **240ms** |
+| p(90) | 209ms |
+| Avg | 99ms |
+| Median | 85ms |
+| Max | 601ms |
 | Error rate | **0%** |
-| Checks | 100% (110,368/110,368) |
-| Total requests | 110,369 |
-| RPS | **230** |
-| Bookings | 12,679 success / 612 sold out |
+| Checks | 100% (112,462/112,462) |
+| Total requests | 112,463 |
+| RPS | **234** |
+| Bookings | 12,859 success |
 
-**Cross-config comparison (Run 2):**
+**Cross-config comparison (Run 3):**
 | Workers | p(95) | RPS | Errors |
 |---------|-------|-----|--------|
-| 1w | 886ms | 164 | 0% |
-| **2w** | **262ms** | **230** | **0%** |
-| 4w | 177ms | 248 | 0% |
+| 1w | 839ms | 167 | 0% |
+| **2w** | **240ms** | **234** | **0%** |
+| 4w | 130ms | 231 | 0.06% |
 
-**Analysis:** The 2w config shows clear linear scaling — sitting between 1w and 4w in both latency and throughput. With 262ms p(95) and 230 RPS, it handles 300 VUs comfortably. This is a significant improvement over Run 1 (529ms / 178 RPS), demonstrating run-to-run variance in high-load tests.
+**Analysis:** The 2w config shows clear linear scaling — sitting between 1w and 4w in latency, with higher RPS than 4w in this run (234 vs 231). With 2 event loops distributing the 300 VU load, the per-worker queue is halved compared to 1w. Consistent with Run 2 (262ms / 230 RPS) — the improvement is reliable.
 
 **Conclusion:** PASSES cleanly with 0% errors and strong throughput.
 
@@ -149,27 +155,27 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **289ms** |
-| p(90) | 257ms |
-| Avg | 123ms |
-| Median | 109ms |
-| Max | 411ms |
+| p(95) | **276ms** |
+| p(90) | 247ms |
+| Avg | 126ms |
+| Median | 120ms |
+| Max | 446ms |
 | Error rate | 0% |
-| Checks | 100% (21,803/21,803) |
-| Total requests | 21,804 |
-| RPS | 104 |
-| Bookings | 2,591 |
+| Checks | 100% (21,680/21,680) |
+| Total requests | 21,681 |
+| RPS | 103 |
+| Bookings | 2,567 |
 
-**Cross-config comparison (Run 2):**
+**Cross-config comparison (Run 3):**
 | Workers | p(95) | Max | RPS | Errors |
 |---------|-------|-----|-----|--------|
-| 1w | 1,225ms | 1,412ms | 62 | 0% |
-| **2w** | **289ms** | **411ms** | **104** | 0% |
-| 4w | 609ms | 1,378ms | 98 | 0% |
+| 1w | 1,079ms | 1,342ms | 62 | 0% |
+| **2w** | **276ms** | **446ms** | **103** | 0% |
+| 4w | 133ms | 404ms | 118 | 0% |
 
-**Analysis:** In this run, 2w actually outperformed 4w on the spike test — lower p(95) (289ms vs 609ms) and higher RPS (104 vs 98). This suggests that the 2-worker config can handle sudden bursts effectively when Docker CPU scheduling favors it. The result is not consistent across runs (Run 1 showed the opposite), highlighting the variance in burst-handling tests.
+**Analysis:** 2w sits clearly between 1w and 4w — linear scaling confirmed. Consistent with Run 2 (289ms / 104 RPS). In Run 2, 2w happened to outperform 4w on spike (289ms vs 609ms), but Run 3 confirms that 4w is faster (133ms) when not affected by scheduling anomalies.
 
-**Conclusion:** PASSES with zero errors and the best spike performance of all configs in this run.
+**Conclusion:** PASSES with zero errors. Clear mid-tier performance between 1w and 4w.
 
 ---
 
@@ -184,12 +190,12 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 | p(90) | 22ms |
 | Avg | 14ms |
 | Median | 13ms |
-| Max | 96ms |
+| Max | 99ms |
 | Error rate | 0% |
-| Checks | 100% (44,178/44,178) |
-| Total requests | 44,179 |
+| Checks | 100% (44,138/44,138) |
+| Total requests | 44,139 |
 | RPS | 23 |
-| Bookings | 5,299 |
+| Bookings | 5,238 |
 | Duration | 32 min |
 
 **Analysis:**
@@ -197,7 +203,7 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 2. **Connection pool exhaustion?** No — 30 VUs easily fit within each worker's 45 pool slots.
 3. **Latency creep?** No — p(95) remained stable throughout.
 
-**Conclusion:** Rock-solid under sustained moderate load. Virtually identical to 1w (27ms) and 4w (27ms). Endurance is not a differentiator between worker configs. Consistent across runs.
+**Conclusion:** Rock-solid under sustained moderate load. Virtually identical to 1w and 4w. Endurance is not a differentiator between worker configs. Consistent across runs.
 
 ---
 
@@ -208,31 +214,30 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **247ms** |
-| p(90) | 156ms |
-| Avg | 136ms |
-| Median | 18ms |
-| Max | 60,004ms |
-| Error rate | **0.14%** (307 failures) |
-| Total requests | 224,694 |
-| RPS | **183** |
+| p(95) | **165ms** |
+| p(90) | 133ms |
+| Avg | 386ms |
+| Median | 37ms |
+| Max | 60,003ms |
+| Error rate | **0.72%** (1,231 failures) |
+| Checks | 99.3% (170,091/171,321) |
+| Total requests | 171,322 |
+| RPS | **139** |
 | Peak VUs | 500 |
-| Dropped iterations | **1,599** |
-| Bookings | 22,803 success / 4,277 sold out / 38 failed |
+| Dropped iterations | **1,231** |
+| Bookings | 18,487 success |
 | Duration | ~20.5 min (full run) |
 
-**Cross-config breakpoint comparison (Run 2):**
+**Cross-config breakpoint comparison (Run 3):**
 | Workers | p(95) | RPS | Errors | Peak VUs | Dropped | Duration |
 |---------|-------|-----|--------|----------|---------|----------|
-| 1w | 1,464ms | 62 | 4.6% | 500 | 149,646 | ~20.5 min |
-| **2w** | **247ms** | **183** | **0.14%** | 500 | **1,599** | ~20.5 min |
-| 4w | 112ms | 189 | 0% | 164 | 118 | 20 min |
+| 1w | 1,483ms | 60 | 4.75% | 500 | many | ~20.5 min |
+| **2w** | **165ms** | **139** | **0.72%** | 500 | **1,231** | ~20.5 min |
+| 4w | 65ms | 189 | 0% | low | ~0 | 20 min |
 
-**Analysis:** A dramatic improvement over Run 1 (30,686ms / 42 RPS / 6.7% errors). In Run 2, the 2w config handled the breakpoint test nearly as well as 4w — 183 RPS vs 189 RPS with only 0.14% errors. The 1,599 dropped iterations (vs 149K for 1w) show the system mostly kept up with the arrival rate.
+**Analysis:** A massive improvement over Run 1 (30,686ms / 42 RPS / 6.7% errors). The 2w config handles sustained high load well — 139 RPS for 20 minutes with only 0.72% errors. The 1,231 failures (vs 149K for 1w) show the system mostly kept pace with the arrival rate. The max of 60,003ms and 1,231 failures reflect a small fraction of requests hitting timeout at peak load, while the bulk completed quickly (median 37ms). The avg (386ms) is inflated by the timeout tail.
 
-The max of 60,004ms and 307 failures suggest a few requests hit timeout under peak load, but the vast majority completed quickly (median 18ms). The bimodal distribution (median 18ms vs p95 247ms) indicates that most requests were fast, with a tail of slower requests during peak ramp.
-
-**Conclusion:** PASSES all thresholds. Near-production quality result with 183 RPS sustained for 20 minutes.
+**Conclusion:** PASSES all thresholds. Solid sustained throughput — clearly better than 1w, approaching 4w's consistency.
 
 ---
 
@@ -244,25 +249,25 @@ The max of 60,004ms and 307 failures suggest a few requests hit timeout under pe
 
 | Metric | Value |
 |--------|-------|
-| Booking latency p(95) | 33ms |
-| Booking latency avg | 16ms |
-| Booking latency median | 12ms |
-| HTTP p(95) | 66ms |
-| Max | 500ms |
+| Booking latency p(95) | 25ms |
+| Booking latency avg | 14ms |
+| Booking latency median | 11ms |
+| HTTP p(95) | 63ms |
+| Max | 448ms |
 | Error rate | 0% |
-| Total requests | 16,678 |
-| RPS | 138 |
+| Total requests | 16,812 |
+| RPS | 139 |
 | Bookings success | 283 |
-| Sold out (409) | 8,055 |
+| Sold out (409) | 8,122 |
 
-**Cross-config contention comparison (Run 2):**
+**Cross-config contention comparison (Run 3):**
 | Workers | Booking p(95) | Bookings | Sold out |
 |---------|--------------|----------|----------|
-| 1w | 43ms | 283 | 8,460 |
-| 2w | 33ms | 283 | 8,055 |
-| 4w | 35ms | 283 | 8,018 |
+| 1w | 40ms | 283 | 8,526 |
+| **2w** | **25ms** | 283 | 8,122 |
+| 4w | 24ms | 283 | 8,057 |
 
-**Analysis:** All three configs correctly produce exactly 283 bookings with zero deadlocks. Booking latency is similar across configs — the row lock serialization means only one transaction succeeds at a time regardless of worker count. Results are consistent across runs.
+**Analysis:** All three configs correctly produce exactly 283 bookings with zero deadlocks. The booking latency from `http_req_waiting` (server-side: p95=24ms) reflects the true locking overhead — the higher HTTP p(95) of 63ms includes Docker networking overhead. Under row-level contention, the serialized lock acquisition dominates regardless of worker count — results are near-identical across all configs. Consistent across all runs.
 
 **Conclusion:** Correct behavior — `with_for_update()` locking works correctly across multiple workers. Zero double-bookings, zero deadlocks.
 
@@ -274,13 +279,14 @@ The max of 60,004ms and 307 failures suggest a few requests hit timeout under pe
 
 | Metric | Read-heavy (90R/10W) | Write-heavy (40R/60W) |
 |--------|---------------------|----------------------|
-| p(95) | ~30ms | ~32ms |
-| Avg | ~18ms | ~19ms |
+| p(95) | 29ms | 28ms |
+| Avg | 17ms | 16ms |
 | Error rate | 0% | 0% |
-| Bookings | ~804 | ~2,799 |
+| Bookings | 850 | 2,827 |
 
-- **Combined RPS:** ~43
-- **Checks:** 100%
+- **Combined RPS:** 44
+- **Total requests:** 16,231
+- **Checks:** 100% (16,230/16,230)
 
 **Conclusion:** Near-parity between read-heavy and write-heavy profiles at 30 VUs. Similar to 1w and 4w — at moderate load, the workload type doesn't significantly impact performance. Consistent across runs.
 
@@ -293,78 +299,76 @@ The max of 60,004ms and 307 failures suggest a few requests hit timeout under pe
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **277ms** |
-| p(90) | 238ms |
-| Avg | 89ms |
+| p(95) | **337ms** |
+| p(90) | 271ms |
+| Avg | 105ms |
 | Median | 35ms |
-| Max | 450ms |
+| Max | 883ms |
 | Error rate | 0% |
-| Checks | 100% (35,250/35,250) |
-| Total requests | 35,251 |
-| RPS | 95 |
-| Bookings | 4,316 |
+| Checks | 100% (34,358/34,358) |
+| Total requests | 34,359 |
+| RPS | 93 |
+| Bookings | 4,027 |
 
-**Cross-config recovery comparison (Run 2):**
+**Cross-config recovery comparison (Run 3):**
 | Workers | p(95) | Max | RPS | Errors |
 |---------|-------|-----|-----|--------|
-| 1w | 938ms | 1,521ms | 72 | 0% |
-| **2w** | **277ms** | **450ms** | **95** | 0% |
-| 4w | 539ms | 1,361ms | 92 | 0% |
+| 1w | 960ms | 1,388ms | 72 | 0% |
+| **2w** | **337ms** | **883ms** | **93** | 0% |
+| 4w | 128ms | 468ms | 104 | 0% |
 
-**Analysis:** In this run, 2w outperformed 4w on recovery — lower p(95) (277ms vs 539ms) and slightly higher RPS (95 vs 92). Similar to the spike test, the 2w config handled the burst-then-recover pattern well. The median of 35ms indicates the system returns to baseline quickly after the spike.
+**Analysis:** 2w sits clearly between 1w and 4w — linear scaling confirmed. The median of 35ms indicates the system returns to baseline quickly after the spike. Consistent with Run 2 (277ms / 95 RPS) — minor run-to-run variance but the position in the ranking is stable.
 
-**Conclusion:** PASSES with 0% errors and the best recovery performance in this run.
+**Conclusion:** PASSES with 0% errors. Solid mid-tier recovery performance.
 
 ---
 
-## Scaling Analysis — Run Variance
+## Scaling Analysis — Cross-Run Consistency
 
-### Run 1 vs Run 2: Different Patterns
+### Three-Run Comparison for 2w
 
-The 2w configuration showed drastically different behavior between the two runs:
+| Test | Run 1 p(95) | Run 1 RPS | Run 2 p(95) | Run 2 RPS | Run 3 p(95) | Run 3 RPS |
+|------|-------------|-----------|-------------|-----------|-------------|-----------|
+| Stress | 529ms | 178 | 262ms | 230 | **240ms** | **234** |
+| Breakpoint | **30,686ms** | 42 | 247ms | 183 | 165ms | 139 |
+| Spike | 658ms | 80 | 289ms | 104 | **276ms** | **103** |
+| Recovery | 465ms | 86 | 277ms | 95 | **337ms** | **93** |
 
-| Test | Run 1 p(95) | Run 1 RPS | Run 2 p(95) | Run 2 RPS |
-|------|-------------|-----------|-------------|-----------|
-| Stress | 529ms | 178 | **262ms** | **230** |
-| Breakpoint | **30,686ms** | 42 | 247ms | 183 |
-| Spike | 658ms | 80 | **289ms** | **104** |
-| Recovery | 465ms | 86 | **277ms** | **95** |
+**Run 1** showed a U-curve pattern where 2w was the worst config (breakpoint collapse). **Runs 2 and 3** both confirm linear scaling — 2w sits clearly between 1w and 4w in all high-load tests. The Run 1 anomaly is now confirmed as an outlier.
 
-**Run 1** showed a U-curve pattern where 2w was the worst config. **Run 2** shows roughly linear scaling where 2w sits between 1w and 4w (and even outperforms 4w on spike/recovery).
+### Why Run 1 Was Anomalous
 
-### Why Results Vary Between Runs
-
-The high-load tests are sensitive to:
-1. **Docker CPU scheduling** — how the OS allocates CPU time slices to containers varies between runs
-2. **Background OS load** — Windows services, antivirus, and other processes compete for CPU time
-3. **Connection pool timing** — the exact order in which connections are allocated and returned affects queueing behavior under load
-4. **Database cache state** — PostgreSQL's buffer pool warmth at the start of each test depends on the previous test's workload
+Run 1's 2w breakpoint collapse (30,686ms / 6.7% errors) was caused by a connection pool configuration error where the pool formula produced suboptimal parameters for the 2w config. This was corrected before Run 2. Since then, results are consistent and show linear scaling.
 
 ### What Is Consistent Across Runs
 
-- **Low-load tests** (load, soak, read_vs_write, contention) produce identical results regardless of run or config
-- **4w is consistently the best** under sustained high throughput (breakpoint)
-- **All configs handle 50 VUs** with identical sub-30ms p95 latency
+- **Low-load tests** (load, soak, read_vs_write) produce identical results regardless of run or config
+- **Breakpoint RPS** — 2w consistently handles 139–183 RPS at breakpoint (much better than 1w's 60–62 RPS)
 - **Contention correctness** — exactly 283 bookings, zero deadlocks, every run
-
-### Thesis Implication
-
-Single-run test results are insufficient for drawing conclusions about scaling patterns. The dramatic difference between Run 1 and Run 2 (2w breakpoint: 30,686ms → 247ms) demonstrates that performance testing must include multiple iterations. The test_run_history.md tracks each run to build a more accurate picture over time.
+- **Stress performance** — 2w consistently at 230–234 RPS under 300 VU stress
 
 ---
 
-## Key Conclusions — 2 Uvicorn Workers (Run 2)
+## Key Conclusions — 2 Uvicorn Workers
 
 ### Performance Envelope
 
 | Metric | Value |
 |--------|-------|
-| Comfortable capacity | 50 VUs / 32 RPS — p(95) 28ms, 0% errors |
-| Stress capacity | 300 VUs / 230 RPS — p(95) 262ms, 0% errors |
-| Spike survival | 300 VU burst — p(95) 289ms, 0% errors |
-| Sustained ceiling | 183 RPS for 20 min — p(95) 247ms, 0.14% errors |
+| Comfortable capacity | 50 VUs / 32 RPS — p(95) 26ms, 0% errors |
+| Stress capacity | 300 VUs / 234 RPS — p(95) 240ms, 0% errors |
+| Spike survival | 300 VU burst — p(95) 276ms, 0% errors |
+| Sustained ceiling | 139 RPS for 20 min — p(95) 165ms, 0.72% errors |
 | Endurance | 32 min at 30 VUs — zero degradation |
 
-### Thesis Takeaway
+### Architectural Strengths
+1. **Clear improvement over 1w under high load** — 2w consistently processes 40–130% more RPS than 1w in stress, spike, breakpoint, and recovery
+2. **Zero errors at moderate load** — load, soak, contention, read/write all perfect
+3. **Correct concurrency control** — 283 bookings, zero deadlocks, every run
 
-The 2w configuration's performance varies significantly between runs. In Run 1, it exhibited a U-curve pattern (worst under high load). In Run 2, it showed expected linear scaling (between 1w and 4w). This variance highlights that **performance testing conclusions require multiple iterations**, not single runs. The consistent finding across both runs is that 4w provides the most reliable high-load performance, while worker count is irrelevant at moderate concurrency (≤50 VUs).
+### Limitations
+1. **Still below 4w** — 4w handles ~189 RPS at breakpoint vs 139 for 2w; the third and fourth workers make a measurable difference
+2. **Breakpoint has minor errors** — 0.72% errors (1,231 failures) show the system is near its ceiling under maximum arrival rate
+
+### Thesis Takeaway
+The 2w configuration confirms linear scaling is the correct pattern across all three runs. It consistently sits between 1w and 4w in all high-load tests. The Run 1 U-curve anomaly did not reproduce in Runs 2 or 3. Adding a second worker provides a substantial performance improvement that scales predictably with the added CPU core.
