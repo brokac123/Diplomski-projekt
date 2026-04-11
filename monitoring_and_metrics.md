@@ -393,7 +393,7 @@ Panel definition in `k6_results.json`:
   "type": "timeseries",
   "targets": [
     {
-      "expr": "sum(rate(k6_http_reqs_total{testid=~\"$testid\"}[5s]))",
+      "expr": "sum(rate(k6_http_reqs_total{testid=~\"$testid\"}[30s]))",
       "legendFormat": "Total RPS"
     }
   ]
@@ -404,7 +404,7 @@ Breaking down the PromQL query:
 
 - `k6_http_reqs_total` — the raw counter metric (always increasing: 1, 2, 3, ...)
 - `{testid=~"$testid"}` — filter by test type (`$testid` is a dashboard dropdown variable)
-- `rate(...[5s])` — convert the counter into a per-second rate over 5-second windows
+- `rate(...[30s])` — convert the counter into a per-second rate over 30-second windows (see "Rate Window vs Scrape Interval" section below)
 - `sum(...)` — add up all endpoints into one total number
 
 Grafana sends this query to Prometheus, which returns values like:
@@ -430,6 +430,48 @@ tags: { testid: "stress" }
 // In load_test.js options:
 tags: { testid: "load" }
 ```
+
+### Rate Window vs Scrape Interval — Why the Window Size Matters
+
+The `rate(metric[window])` function calculates how fast a counter is increasing per second. To do this, it needs **at least two data samples** within the specified time window. If the window is too small, Prometheus cannot find enough samples and returns near-zero or nothing.
+
+The key relationship is:
+
+```
+rate window  ≥  2 × scrape_interval   (minimum)
+rate window  ≥  3-4 × scrape_interval (recommended, accounts for jitter)
+```
+
+In this project, `monitoring/prometheus.yml` sets:
+
+```yaml
+global:
+  scrape_interval: 5s
+```
+
+Prometheus scrapes every 5 seconds. However, scrape timing is not perfectly precise — network delays and scheduling jitter mean that two consecutive scrapes do not always land exactly 5 seconds apart. In practice, the gap between samples can be 5.0s to 5.5s or more.
+
+**With `rate(...[5s])`** — a 5-second window at a 5-second scrape interval:
+- The window contains 0 or 1 sample (depending on exact timing)
+- `rate()` requires a minimum of 2 samples to calculate a slope
+- Result: Prometheus returns near-zero or no data
+- Grafana shows ~0.4 req/s instead of the real ~167 req/s
+
+**With `rate(...[30s])`** — a 30-second window at a 5-second scrape interval:
+- The window reliably contains 5-6 samples
+- `rate()` has enough data points to calculate an accurate slope
+- Result: Prometheus returns the true per-second rate
+- Grafana shows the correct RPS curve
+
+The corrected RPS query used in this project:
+
+```promql
+sum(rate(k6_http_reqs_total{testid=~"$testid"}[30s]))
+```
+
+**Important:** This only applies to `rate()` and `irate()` applied to **counter** metrics. Gauge metrics (like `k6_http_req_failed_rate` or `k6_vus`) are queried directly without a window — `avg(k6_http_req_failed_rate{...})` returns the current gauge value without any rate calculation and is unaffected by scrape interval.
+
+**Rule of thumb for this project:** Use `[30s]` for any `rate()` query. The 5-second scrape interval is kept because it provides fine-grained data for latency panels and VU panels — it does not need to change.
 
 ---
 
@@ -613,10 +655,10 @@ The Grafana dashboard "K6 Performance Test Results" is defined in `monitoring/gr
 | Panel | PromQL Query | Data Source | What It Shows |
 |-------|-------------|-------------|---------------|
 | **Active Virtual Users** | `k6_vus{testid=~"$testid"}` | K6 push | Number of concurrent VUs over time |
-| **Requests Per Second** | `sum(rate(k6_http_reqs_total{testid=~"$testid"}[5s]))` | K6 push | Total throughput (all endpoints combined) |
+| **Requests Per Second** | `sum(rate(k6_http_reqs_total{testid=~"$testid"}[30s]))` | K6 push | Total throughput (all endpoints combined) |
 | **Response Time Percentiles** | `max(k6_http_req_duration_p50/p90/p95/p99{...}) * 1000` | K6 push | p50, p90, p95, p99 latency in ms (4 lines) |
 | **Error Rate** | `avg(k6_http_req_failed_rate{testid=~"$testid"})` | K6 push | Percentage of failed requests |
-| **RPS by Endpoint** | `sum by (name) (rate(k6_http_reqs_total{...}[5s]))` | K6 push | Per-endpoint throughput (one line per `name` tag) |
+| **RPS by Endpoint** | `sum by (name) (rate(k6_http_reqs_total{...}[30s]))` | K6 push | Per-endpoint throughput (one line per `name` tag) |
 | **Response Time by Endpoint** | `k6_http_req_duration_p95{...} * 1000` | K6 push | Per-endpoint p95 latency |
 | **Response Time vs VUs** | `k6_http_req_duration_p95 + k6_vus` | K6 push | Dual-axis: latency (left) vs VU count (right) |
 
@@ -647,7 +689,7 @@ The Grafana dashboard "K6 Performance Test Results" is defined in `monitoring/gr
 
 ### How PromQL Works (Key Patterns)
 
-- `rate(counter[5s])` — converts an always-increasing counter into a per-second rate over 5-second windows
+- `rate(counter[30s])` — converts an always-increasing counter into a per-second rate over 30-second windows (window must be at least 3-4× the scrape interval; see Section 10)
 - `sum(...)` — adds up all matching time series into one
 - `sum by (name) (...)` — groups results by the `name` label (one result per endpoint)
 - `max(...)` — takes the highest value across all matching series
