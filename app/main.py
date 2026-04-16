@@ -143,9 +143,11 @@ def update_event(event_id: int, event: schemas.EventCreate, db: Session = Depend
 
 @app.patch("/events/{event_id}", response_model=schemas.Event, tags=["Events"])
 def patch_event(event_id: int, event: schemas.EventUpdate, db: Session = Depends(get_db)):
-    db_event = crud.patch_event(db, event_id, event)
-    if db_event is None:
+    db_event, reason = crud.patch_event(db, event_id, event)
+    if reason == "not_found":
         raise HTTPException(status_code=404, detail="Event not found")
+    if reason == "invalid":
+        raise HTTPException(status_code=400, detail="total_tickets cannot be less than already booked tickets")
     return db_event
 
 

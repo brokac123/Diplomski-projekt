@@ -104,12 +104,18 @@ def update_event(db: Session, event_id: int, event: schemas.EventCreate):
 def patch_event(db: Session, event_id: int, event: schemas.EventUpdate):
     db_event = db.query(models.Event).filter(models.Event.id == event_id).first()
     if not db_event:
-        return None
-    for key, value in event.model_dump(exclude_unset=True).items():
+        return None, "not_found"
+    data = event.model_dump(exclude_unset=True)
+    if "total_tickets" in data:
+        booked_tickets = db_event.total_tickets - db_event.available_tickets
+        if data["total_tickets"] < booked_tickets:
+            return None, "invalid"
+        data["available_tickets"] = data["total_tickets"] - booked_tickets
+    for key, value in data.items():
         setattr(db_event, key, value)
     db.commit()
     db.refresh(db_event)
-    return db_event
+    return db_event, "ok"
 
 
 def get_upcoming_events(db: Session, skip: int = 0, limit: int = 100):
@@ -328,7 +334,10 @@ def cancel_booking(db: Session, booking_id: int):
 
 def delete_booking(db: Session, booking_id: int):
     db_booking = (
-        db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+        db.query(models.Booking)
+        .filter(models.Booking.id == booking_id)
+        .with_for_update()
+        .first()
     )
     if db_booking:
         event = (
