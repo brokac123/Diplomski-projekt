@@ -1,6 +1,6 @@
 # K6 Performance Test Results — 2 Uvicorn Workers
 
-**Date:** 2026-04-18 (Run 6)
+**Date:** 2026-04-18 (Run 7)
 **Configuration:** Docker (FastAPI + PostgreSQL), 2 Uvicorn workers
 **Seed data:** 1,000 users, 100 events, 2,000 bookings (re-seeded before each test via `run_tests.sh`)
 **Monitoring:** K6 → Prometheus remote write → Grafana dashboard (live visualization)
@@ -22,17 +22,17 @@
 | Baseline | Smoke | 10 | 71ms | 0% | 65 | 2,129 | PASS |
 | Endpoint Benchmark | Isolation | 20 | ~65ms* | 0% | ~56 | ~25,633 | PASS |
 | Load | Normal load | 50 | 24ms | 0% | 32 | 15,495 | PASS |
-| Stress | Overload | 300 | 248ms | 0% | 232 | 111,266 | PASS |
-| Spike | Burst | 300 | 297ms | 0% | 103 | 21,727 | PASS |
+| Stress | Overload | 300 | 253ms | 0% | 230 | 110,391 | PASS |
+| Spike | Burst | 300 | 277ms | 0% | 104 | 21,784 | PASS |
 | Soak | Endurance | 30 | 23ms | 0% | 23 | 44,138 | PASS |
-| Breakpoint | Capacity | 500 | 149ms | 0% | 189 | 226,311 | PASS |
-| Contention | Locking | 50 | 27ms† | 0% | 138 | 16,738 | PASS |
+| Breakpoint | Capacity | 500 | 10,035ms | 5.19% | 65.7 | 72,641 | FAIL |
+| Contention | Locking | 50 | 30ms† | 0% | 138 | 16,676 | PASS |
 | Read vs Write | Traffic profile | 30 | ~29ms | 0% | ~44 | ~16,169 | PASS |
-| Recovery | Resilience | 300 | 280ms | 0% | 95 | 35,105 | PASS |
+| Recovery | Resilience | 300 | 251ms | 0% | 97 | 35,744 | PASS |
 
 *Overall p(95) across all scenarios. †Contention booking-specific latency p(95).
 
-**All 10 tests PASS. Breakpoint matched the ~189 RPS system ceiling with 0% errors and only 189 dropped iterations — the best 2w breakpoint result since Run 4. Six consecutive runs confirm linear scaling in the stress test without exception.**
+**9 of 10 tests PASS. Breakpoint FAILS the p(95) < 5000ms abortOnFail threshold at 10,035ms — 2w collapsed (5.19% errors, 109,285 dropped iterations, test aborted at ~18.4 min). Seven consecutive runs confirm linear scaling in the stress test without exception.**
 
 ---
 
@@ -124,25 +124,25 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **248ms** |
-| p(90) | 220ms |
-| Avg | 106ms |
-| Median | 91ms |
-| Max | 583ms |
+| p(95) | **253ms** |
+| p(90) | 215ms |
+| Avg | 111ms |
+| Median | 86ms |
+| Max | 6,773ms |
 | Error rate | **0%** |
-| Checks | 100% (111,265/111,265) |
-| Total requests | 111,266 |
-| RPS | **232** |
-| Bookings | 12,757 success |
+| Checks | 100% (110,390/110,390) |
+| Total requests | 110,391 |
+| RPS | **230** |
+| Bookings | 12,459 success |
 
-**Cross-config comparison (Run 6):**
+**Cross-config comparison (Run 7):**
 | Workers | p(95) | RPS | Errors |
 |---------|-------|-----|--------|
-| 1w | 854ms | 168 | 0% |
-| **2w** | **248ms** | **232** | **0%** |
-| 4w | 141ms | 254 | 0% |
+| 1w | 1,616ms | 120 | 0% |
+| **2w** | **253ms** | **230** | **0%** |
+| 4w | 120ms | 257 | 0% |
 
-**Analysis:** The 2w config shows clear linear scaling — sitting between 1w and 4w in latency. With 2 event loops distributing the 300 VU load, the per-worker queue is halved compared to 1w. Stress results are highly consistent across runs: Run 2 (262ms/230 RPS), Run 3 (240ms/234 RPS), Run 4 (234ms/235 RPS), Run 5 (239ms/233 RPS), Run 6 (248ms/232 RPS) — stable at ~230–250ms, ~230–235 RPS.
+**Analysis:** The 2w config shows clear linear scaling — sitting between 1w and 4w in latency. With 2 event loops distributing the 300 VU load, the per-worker queue is halved compared to 1w. Stress results are highly consistent across runs: Run 2 (262ms/230 RPS), Run 3 (240ms/234 RPS), Run 4 (234ms/235 RPS), Run 5 (239ms/233 RPS), Run 6 (248ms/232 RPS), Run 7 (253ms/230 RPS) — stable at ~234–262ms, ~229–235 RPS.
 
 **Conclusion:** PASSES cleanly with 0% errors and strong throughput.
 
@@ -155,25 +155,25 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **297ms** |
-| p(90) | 259ms |
-| Avg | 125ms |
-| Median | 114ms |
-| Max | 494ms |
+| p(95) | **277ms** |
+| p(90) | 249ms |
+| Avg | 123ms |
+| Median | 117ms |
+| Max | 448ms |
 | Error rate | 0% |
-| Checks | 100% (21,726/21,726) |
-| Total requests | 21,727 |
-| RPS | 103 |
-| Bookings | 2,594 |
+| Checks | 100% (21,783/21,783) |
+| Total requests | 21,784 |
+| RPS | 104 |
+| Bookings | 2,578 |
 
-**Cross-config comparison (Run 6):**
+**Cross-config comparison (Run 7):**
 | Workers | p(95) | Max | RPS | Errors |
 |---------|-------|-----|-----|--------|
-| 1w | 1,235ms | 1,512ms | 55 | 0% |
-| **2w** | **297ms** | **494ms** | **103** | 0% |
-| 4w | 154ms | 407ms | 118 | 0% |
+| 1w | 1,923ms | 2,240ms | 44 | 0% |
+| **2w** | **277ms** | **448ms** | **104** | 0% |
+| 4w | 170ms | 433ms | 116 | 0% |
 
-**Analysis:** 2w sits clearly between 1w and 4w — linear scaling confirmed. Consistent across runs: Run 2 (289ms/104 RPS), Run 3 (276ms/103 RPS), Run 4 (280ms/103 RPS), Run 5 (333ms/102 RPS), Run 6 (297ms/103 RPS). RPS is rock-solid at ~103 across Runs 2–6.
+**Analysis:** 2w sits clearly between 1w and 4w — linear scaling confirmed. Consistent across runs: Run 2 (289ms/104 RPS), Run 3 (276ms/103 RPS), Run 4 (280ms/103 RPS), Run 5 (333ms/102 RPS), Run 6 (297ms/103 RPS), Run 7 (277ms/104 RPS). RPS is rock-solid at ~102–104 across Runs 2–7.
 
 **Conclusion:** PASSES with zero errors. Clear mid-tier performance between 1w and 4w.
 
@@ -214,40 +214,43 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **149ms** |
-| p(90) | 113ms |
-| Avg | 49ms |
-| Median | 28ms |
-| Max | 1,284ms |
-| Error rate | **0%** |
-| Checks | 100% (226,310/226,310) |
-| Total requests | 226,311 |
-| RPS | **189** |
-| Peak VUs | 232 |
-| Dropped iterations | 189 |
-| Bookings | 23,059 success |
-| Duration | 20 min (ran to completion) |
+| p(95) | **10,035ms** |
+| p(90) | 92ms |
+| Avg | 2,946ms |
+| Median | 14ms |
+| Max | 60,012ms |
+| Error rate | **5.19%** (3,769 failures) |
+| Checks | 94.8% (68,871/72,640) |
+| Total requests | 72,641 |
+| RPS | **65.7** |
+| Peak VUs | 500 |
+| Dropped iterations | **109,285** |
+| Bookings | 8,129 success |
+| Duration | ~18.4 min (ABORTED — threshold breached) |
 
-**Cross-config breakpoint comparison (Run 6):**
+**Threshold result:** FAIL — p(95) of 10,035ms breaches the 5,000ms abortOnFail threshold. The test was aborted after ~18.4 minutes. This is the second 2w breakpoint collapse across all 7 runs.
+
+**Cross-config breakpoint comparison (Run 7):**
 | Workers | p(95) | RPS | Errors | Dropped | Duration |
 |---------|-------|-----|--------|---------|----------|
-| 1w | 795ms | 71 | 3.48% | 138,953 | ~20.5 min |
-| **2w** | **149ms** | **189** | **0%** | **189** | **20 min** |
-| 4w | 51ms | 189 | 0% | 8 | 20 min |
+| 1w | 31,348ms | 47.9 | 4.64% | 58,384 | ~14.7 min (ABORTED) |
+| **2w** | **10,035ms** | **65.7** | **5.19%** | **109,285** | **~18.4 min (ABORTED)** |
+| 4w | 85ms | 189 | 0% | negligible | 20 min (full) |
 
-**Analysis:** Run 6 shows 2w matching the system's ~189 RPS ceiling — the second time across all six runs (previously Run 4: 188.6 RPS). The low dropped count (189) and 0% errors confirm 2w fully absorbed the arrival rate in this run. The bimodal distribution (median=28ms, avg=49ms, max=1,284ms) reflects a few slow outliers against a fast majority — characteristic of a 2w run that stays under the ceiling.
+**Analysis:** Run 7 shows 2w in catastrophic collapse — the bimodal distribution (median=14ms, avg=2,946ms) shows most requests either complete quickly or time out. The fast majority (http_req_duration{expected_response:true} p95=98ms) indicates successful requests were fine; the overall p95 is dragged up by timeout failures. 109,285 dropped iterations vs 189 in Run 6 illustrates the extreme sensitivity to Docker scheduling conditions.
 
 **Cross-run breakpoint comparison for 2w:**
-- Run 1: 30,686ms / 42 RPS / 6.7% (anomalous collapse — pool config error)
+- Run 1: 30,686ms / 42 RPS / 6.7% (collapse — pool config error)
 - Run 2: 247ms / 183 RPS / 0.14%
 - Run 3: 165ms / 139 RPS / 0.72%
 - Run 4: **154ms / 188.6 RPS / 0%** (matched 4w ceiling)
 - Run 5: **1,108ms / 134.9 RPS / 0.62%** (degraded — 60K dropped)
-- Run 6: **149ms / 189 RPS / 0%** (matched 4w ceiling again)
+- Run 6: **149ms / 189 RPS / 0%** (matched 4w ceiling)
+- Run 7: **10,035ms / 65.7 RPS / 5.19%** (catastrophic collapse — aborted)
 
-The wide variance (134–189 RPS across Runs 2–6) reflects Docker scheduling sensitivity. 2w can reach the ~189 RPS ceiling (Runs 4 and 6) but does not do so consistently. 4w reaches it every run.
+The extreme variance (65–189 RPS across Runs 2–7) reflects Docker scheduling sensitivity. 2w can reach the ~189 RPS ceiling (Runs 4 and 6) but collapses catastrophically in unfavorable conditions (Runs 1 and 7). 4w reaches the ceiling every run without exception.
 
-**Conclusion:** PASSES K6 thresholds with 0% errors. Run 6 is the best 2w breakpoint result — matched the system ceiling. Whether this repeats in future runs depends on Docker scheduling conditions.
+**Conclusion:** FAILS K6 thresholds with catastrophic collapse. 2w breakpoint behavior is fundamentally unreliable — only 4w provides consistent breakpoint performance.
 
 ---
 
@@ -259,25 +262,25 @@ The wide variance (134–189 RPS across Runs 2–6) reflects Docker scheduling s
 
 | Metric | Value |
 |--------|-------|
-| Booking latency p(95) | 27ms |
-| Booking latency avg | 13ms |
-| Booking latency median | 10ms |
-| HTTP p(95) | 63ms |
-| Max | 414ms |
+| Booking latency p(95) | 30ms |
+| Booking latency avg | 15ms |
+| Booking latency median | 11ms |
+| HTTP p(95) | 64ms |
+| Max | 463ms |
 | Error rate | 0% |
-| Total requests | 16,738 |
+| Total requests | 16,676 |
 | RPS | 138 |
 | Bookings success | 283 |
-| Sold out (409) | 8,085 |
+| Sold out (409) | 8,054 |
 
-**Cross-config contention comparison (Run 6):**
+**Cross-config contention comparison (Run 7):**
 | Workers | Booking p(95) | Bookings | Sold out |
 |---------|--------------|----------|----------|
-| 1w | 40ms | 283 | 8,514 |
-| **2w** | **27ms** | 283 | 8,085 |
-| 4w | 23ms | 283 | 8,119 |
+| 1w | 58ms | 283 | 8,415 |
+| **2w** | **30ms** | 283 | 8,054 |
+| 4w | 26ms | 283 | 8,048 |
 
-**Analysis:** All three configs correctly produce exactly 283 bookings with zero deadlocks. The 283-booking invariant holds across all 6 runs and all 3 configs without exception. The HTTP p(95) of 63ms includes a large http_req_receiving component (avg=21ms) — an artifact of Docker networking in multi-worker mode. The booking-specific latency (27ms) is the reliable metric here.
+**Analysis:** All three configs correctly produce exactly 283 bookings with zero deadlocks. The 283-booking invariant holds across all 7 runs and all 3 configs without exception. The HTTP p(95) of 64ms includes a large http_req_receiving component (avg=22ms) — an artifact of Docker networking in multi-worker mode. The booking-specific latency (30ms) is the reliable metric here.
 
 **Conclusion:** Correct behavior — `with_for_update()` locking works correctly across multiple workers. Zero double-bookings, zero deadlocks.
 
@@ -309,25 +312,25 @@ The wide variance (134–189 RPS across Runs 2–6) reflects Docker scheduling s
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **280ms** |
-| p(90) | 237ms |
-| Avg | 92ms |
-| Median | 38ms |
-| Max | 498ms |
+| p(95) | **251ms** |
+| p(90) | 209ms |
+| Avg | 81ms |
+| Median | 36ms |
+| Max | 637ms |
 | Error rate | 0% |
-| Checks | 100% (35,104/35,104) |
-| Total requests | 35,105 |
-| RPS | 95 |
-| Bookings | 4,207 |
+| Checks | 100% (35,743/35,743) |
+| Total requests | 35,744 |
+| RPS | 97 |
+| Bookings | 4,289 |
 
-**Cross-config recovery comparison (Run 6):**
+**Cross-config recovery comparison (Run 7):**
 | Workers | p(95) | Max | RPS | Errors |
 |---------|-------|-----|-----|--------|
-| 1w | 987ms | 1,251ms | 73 | 0% |
-| **2w** | **280ms** | **498ms** | **95** | 0% |
-| 4w | 146ms | 408ms | 103 | 0% |
+| 1w | 1,835ms | 2,213ms | 61 | 0% |
+| **2w** | **251ms** | **637ms** | **97** | 0% |
+| 4w | 135ms | 451ms | 104 | 0% |
 
-**Analysis:** Run 6 shows clear linear ordering in recovery: 4w (146ms) < 2w (280ms) < 1w (987ms), all 0% errors. The second consecutive run with a clean linear ordering. The 2w result of 280ms is close to Run 3 (337ms) and Run 4 (261ms) — well within expected burst-test variance.
+**Analysis:** Run 7 shows clear linear ordering in recovery: 4w (135ms) < 2w (251ms) < 1w (1,835ms), all 0% errors. The 2w result of 251ms is the best recovery result across all 7 runs, well within expected burst-test variance.
 
 **Conclusion:** PASSES with 0% errors. Clear linear ordering confirmed.
 
@@ -335,16 +338,16 @@ The wide variance (134–189 RPS across Runs 2–6) reflects Docker scheduling s
 
 ## Scaling Analysis — Cross-Run Consistency
 
-### Six-Run Comparison for 2w
+### Seven-Run Comparison for 2w
 
-| Test | Run 1 p(95) | Run 1 RPS | Run 2 p(95) | Run 2 RPS | Run 3 p(95) | Run 3 RPS | Run 4 p(95) | Run 4 RPS | Run 5 p(95) | Run 5 RPS | Run 6 p(95) | Run 6 RPS |
-|------|-------------|-----------|-------------|-----------|-------------|-----------|-------------|-----------|-------------|-----------|-------------|-----------|
-| Stress | 529ms | 178 | 262ms | 230 | 240ms | 234 | 234ms | 235 | 239ms | 233 | **248ms** | **232** |
-| Breakpoint | 30,686ms | 42 | 247ms | 183 | 165ms | 139 | **154ms** | **188.6** | 1,108ms | 134.9 | **149ms** | **189** |
-| Spike | 658ms | 80 | 289ms | 104 | 276ms | 103 | 280ms | 103 | 333ms | 102 | **297ms** | **103** |
-| Recovery | 465ms | 86 | 277ms | 95 | 337ms | 93 | 261ms | 94 | 448ms | 86 | **280ms** | **95** |
+| Test | Run 1 p(95) | Run 1 RPS | Run 2 p(95) | Run 2 RPS | Run 3 p(95) | Run 3 RPS | Run 4 p(95) | Run 4 RPS | Run 5 p(95) | Run 5 RPS | Run 6 p(95) | Run 6 RPS | Run 7 p(95) | Run 7 RPS |
+|------|-------------|-----------|-------------|-----------|-------------|-----------|-------------|-----------|-------------|-----------|-------------|-----------|-------------|-----------|
+| Stress | 529ms | 178 | 262ms | 230 | 240ms | 234 | 234ms | 235 | 239ms | 233 | 248ms | 232 | **253ms** | **230** |
+| Breakpoint | 30,686ms | 42 | 247ms | 183 | 165ms | 139 | **154ms** | **188.6** | 1,108ms | 134.9 | **149ms** | **189** | **10,035ms** | **65.7** |
+| Spike | 658ms | 80 | 289ms | 104 | 276ms | 103 | 280ms | 103 | 333ms | 102 | 297ms | 103 | **277ms** | **104** |
+| Recovery | 465ms | 86 | 277ms | 95 | 337ms | 93 | 261ms | 94 | 448ms | 86 | 280ms | 95 | **251ms** | **97** |
 
-**Run 1** showed a U-curve anomaly (pool config error). **Runs 2–6** all confirm linear scaling in the stress test — 2w sits clearly between 1w and 4w in all high-load tests. The breakpoint test remains the most variable for 2w (134–189 RPS across Runs 2–6); 2w matched the ceiling in Runs 4 and 6.
+**Run 1** showed a U-curve anomaly (pool config error). **Runs 2–7** all confirm linear scaling in the stress test — 2w sits clearly between 1w and 4w in all high-load tests. The breakpoint test remains highly variable for 2w: 2w matched the ceiling in Runs 4 and 6 (189 RPS) but collapsed catastrophically in Runs 1 and 7 — confirming 2w breakpoint behavior is Docker-scheduling-dependent.
 
 ### Why Run 1 Was Anomalous
 
@@ -353,9 +356,9 @@ Run 1's 2w breakpoint collapse (30,686ms / 6.7% errors) was caused by a connecti
 ### What Is Consistent Across Runs
 
 - **Low-load tests** (load, soak, read_vs_write) produce identical results regardless of run or config
-- **Breakpoint RPS** — 2w achieves 135–189 RPS (vs 1w's 43–71 RPS). In Runs 4 and 6, matched 4w's 189 RPS ceiling.
+- **Breakpoint RPS** — 2w achieves 65–189 RPS across all runs (vs 1w's 43–72 RPS). In Runs 4 and 6, matched 4w's 189 RPS ceiling; collapsed in Runs 1 and 7.
 - **Contention correctness** — exactly 283 bookings, zero deadlocks, every run
-- **Stress performance** — 2w consistently at 230–235 RPS under 300 VU stress across all 6 runs
+- **Stress performance** — 2w consistently at 230–235 RPS under 300 VU stress across all 7 runs
 
 ---
 
@@ -366,9 +369,9 @@ Run 1's 2w breakpoint collapse (30,686ms / 6.7% errors) was caused by a connecti
 | Metric | Value |
 |--------|-------|
 | Comfortable capacity | 50 VUs / 32 RPS — p(95) 24ms, 0% errors |
-| Stress capacity | 300 VUs / 232 RPS — p(95) 248ms, 0% errors |
-| Spike survival | 300 VU burst — p(95) 297ms, 0% errors |
-| Sustained ceiling | 135–189 RPS for 20 min — variable by run (Runs 4 and 6: matched 189 RPS / 0% errors) |
+| Stress capacity | 300 VUs / 230–235 RPS — p(95) 234–262ms, 0% errors (all 7 runs) |
+| Spike survival | 300 VU burst — p(95) 276–333ms, 0% errors |
+| Sustained ceiling | 65–189 RPS for 20 min — highly variable by run (matched ceiling in Runs 4 and 6; collapsed in Runs 1 and 7) |
 | Endurance | 32 min at 30 VUs — zero degradation |
 
 ### Architectural Strengths
@@ -377,8 +380,8 @@ Run 1's 2w breakpoint collapse (30,686ms / 6.7% errors) was caused by a connecti
 3. **Correct concurrency control** — 283 bookings, zero deadlocks, every run
 
 ### Limitations
-1. **Breakpoint RPS varies by run** — 135–189 RPS across Runs 2–6. The system ceiling is ~189 RPS; whether 2w reaches it depends on Docker scheduling. 4w reaches it every run; 2w reaches it in favorable conditions (Runs 4 and 6).
+1. **Breakpoint RPS is highly variable** — 65–189 RPS across all 7 runs. The system ceiling is ~189 RPS; whether 2w reaches it depends on Docker scheduling. 4w reaches it every run; 2w reached it only in Runs 4 and 6, and collapsed in Runs 1 and 7.
 2. **Burst tests are high-variance** — spike and recovery results shift between runs, though 2w consistently outperforms 1w.
 
 ### Thesis Takeaway
-The 2w configuration confirms linear scaling is the correct pattern across all six runs. It consistently sits between 1w and 4w in all high-load tests. The Run 1 U-curve anomaly did not reproduce in any subsequent run. In Runs 4 and 6, 2w matched 4w's breakpoint ceiling (~189 RPS / 0% errors) — demonstrating that 2w can saturate the system under favorable conditions, while 1w fundamentally cannot. The stress test (most stable measurement) shows 2w consistently at ~230–248 RPS across all 6 runs — a clear and repeatable improvement over 1w's ~164–174 RPS.
+The 2w configuration confirms linear scaling is the correct pattern across all seven runs. It consistently sits between 1w and 4w in all high-load tests. The stress test (most stable measurement) shows 2w consistently at ~230–262 RPS across all 7 runs — a clear and repeatable improvement over 1w's ~120–174 RPS. Breakpoint behavior is the key differentiator: 2w collapsed catastrophically in Runs 1 and 7 (matching 1w's failure mode) but matched 4w's ceiling in Runs 4 and 6 — demonstrating that 2w breakpoint performance is fundamentally tied to Docker CPU scheduling conditions, not a reliable architectural property. Only 4w provides consistent breakpoint immunity across all 7 runs.

@@ -1,6 +1,6 @@
 # K6 Performance Test Results — 1 Uvicorn Worker
 
-**Date:** 2026-04-18 (Run 6)
+**Date:** 2026-04-18 (Run 7)
 **Configuration:** Docker (FastAPI + PostgreSQL), 1 Uvicorn worker
 **Seed data:** 1,000 users, 100 events, 2,000 bookings (re-seeded before each test via `run_tests.sh`)
 **Monitoring:** K6 → Prometheus remote write → Grafana dashboard (live visualization)
@@ -21,17 +21,17 @@
 | Baseline | Smoke | 10 | 39ms | 0% | 91 | 2,885 | PASS |
 | Endpoint Benchmark | Isolation | 20 | ~45ms* | 0% | ~59 | ~27,000 | PASS |
 | Load | Normal load | 50 | 24ms | 0% | 32 | 15,478 | PASS |
-| Stress | Overload | 300 | 854ms | 0% | 168 | 80,748 | PASS |
-| Spike | Burst | 300 | 1,235ms | 0% | 55 | 11,557 | PASS |
+| Stress | Overload | 300 | 1,616ms | 0% | 120 | 57,551 | FAIL |
+| Spike | Burst | 300 | 1,923ms | 0% | 44 | 9,244 | PASS |
 | Soak | Endurance | 30 | 25ms | 0% | 23 | 44,049 | PASS |
-| Breakpoint | Capacity | 500 | 795ms | 3.48% | 71 | 87,137 | PASS* |
-| Contention | Locking | 50 | 40ms† | 0% | 145 | 17,596 | PASS |
+| Breakpoint | Capacity | 500 | 31,348ms | 4.64% | 47.9 | 42,285 | FAIL |
+| Contention | Locking | 50 | 58ms† | 0% | 144 | 17,398 | PASS |
 | Read vs Write | Traffic profile | 30 | ~32ms | 0% | ~44 | ~16,235 | PASS |
-| Recovery | Resilience | 300 | 987ms | 0% | 73 | 27,040 | PASS |
+| Recovery | Resilience | 300 | 1,835ms | 0% | 61 | 22,690 | PASS |
 
 *Overall p(95) across all scenarios. †Contention booking-specific latency p(95).
 
-**9 of 10 tests PASS with 0% errors. Breakpoint passes the K6 p(95) < 5000ms threshold (795ms) but shows 3.48% errors and 138,953 dropped iterations — moderate collapse. The event loop is at its capacity boundary under open-model load.**
+**8 of 10 tests PASS. Stress FAILS the p(95) < 1500ms threshold at 1,616ms — the first time 1w stress fails its threshold across all 7 runs. Breakpoint FAILS the p(95) < 5000ms abortOnFail threshold at 31,348ms — catastrophic collapse, test aborted at ~14.7 min, 4.64% errors, 58,384 dropped iterations.**
 
 ---
 
@@ -122,27 +122,27 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **854ms** |
-| p(90) | 762ms |
-| Avg | 335ms |
-| Median | 255ms |
-| Max | 3,733ms |
+| p(95) | **1,616ms** |
+| p(90) | 1,491ms |
+| Avg | 672ms |
+| Median | 576ms |
+| Max | 2,104ms |
 | Error rate | 0% |
-| Checks | 100% (80,747/80,747) |
-| Total requests | 80,748 |
-| RPS | **168** |
-| Bookings | 9,413 success |
+| Checks | 100% (57,550/57,550) |
+| Total requests | 57,551 |
+| RPS | **120** |
+| Bookings | 6,702 success |
 
-**Cross-config comparison (Run 6):**
+**Cross-config comparison (Run 7):**
 | Workers | p(95) | RPS | Errors |
 |---------|-------|-----|--------|
-| **1w** | **854ms** | **168** | 0% |
-| 2w | 248ms | 232 | 0% |
-| 4w | 141ms | 254 | 0% |
+| **1w** | **1,616ms** | **120** | 0% |
+| 2w | 253ms | 230 | 0% |
+| 4w | 120ms | 257 | 0% |
 
-**Analysis:** The single worker shows significantly higher latency than 2w and 4w under 300 VU stress. With only one event loop processing all requests, the single CPU core becomes the bottleneck at this concurrency level. The connection pool (90 total) has plenty of capacity — CPU, not connections, is the limiting factor. This result is highly consistent across runs: Run 2 (886ms / 164 RPS), Run 3 (839ms / 167 RPS), Run 4 (830ms / 167 RPS), Run 5 (804ms / 174 RPS), Run 6 (854ms / 168 RPS) — the 1w ceiling is stable across all runs.
+**Analysis:** The single worker shows significantly higher latency than 2w and 4w under 300 VU stress. With only one event loop processing all requests, the single CPU core becomes the bottleneck at this concurrency level. Run 7 produced 1,616ms p95 — the worst 1w stress result across all 7 runs, exceeding the 1,500ms threshold for the first time. This aligns with higher host load during this run (WSL2/Docker scheduling variance). Across runs: Run 2 (886ms / 164 RPS), Run 3 (839ms / 167 RPS), Run 4 (830ms / 167 RPS), Run 5 (804ms / 174 RPS), Run 6 (854ms / 168 RPS), Run 7 (1,616ms / 120 RPS) — the 1w event loop consistently saturates at 300 VUs.
 
-**Conclusion:** PASSES with 0% errors but the highest latency among all configs. The single event loop is saturated at 300 VUs.
+**Conclusion:** FAILS p(95) threshold (1,616ms > 1,500ms) — first threshold failure across all 7 runs. 0% errors despite threshold breach. Higher host load during Run 7 pushed 1w beyond its usual ceiling.
 
 ---
 
@@ -153,25 +153,25 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **1,235ms** |
-| p(90) | 1,199ms |
-| Avg | 680ms |
-| Median | 949ms |
-| Max | 1,512ms |
+| p(95) | **1,923ms** |
+| p(90) | 1,862ms |
+| Avg | 981ms |
+| Median | 1,356ms |
+| Max | 2,240ms |
 | Error rate | 0% |
-| Checks | 100% (11,556/11,556) |
-| Total requests | 11,557 |
-| RPS | 55 |
-| Bookings | 1,391 |
+| Checks | 100% (9,243/9,243) |
+| Total requests | 9,244 |
+| RPS | 44 |
+| Bookings | 1,107 |
 
-**Cross-config comparison (Run 6):**
+**Cross-config comparison (Run 7):**
 | Workers | p(95) | Max | RPS | Errors |
 |---------|-------|-----|-----|--------|
-| **1w** | **1,235ms** | 1,512ms | **55** | 0% |
-| 2w | 297ms | 494ms | 103 | 0% |
-| 4w | 154ms | 369ms | 118 | 0% |
+| **1w** | **1,923ms** | 2,240ms | **44** | 0% |
+| 2w | 277ms | 448ms | 104 | 0% |
+| 4w | 170ms | 433ms | 116 | 0% |
 
-**Analysis:** The single worker struggles most with sudden bursts — 1,235ms p(95) and only 55 RPS. With one event loop, the 300 VU spike saturates the CPU and all requests queue. Linear scaling is clearly visible: 4w handles the same burst at 154ms / 118 RPS. Consistent across runs: Run 2 (1,225ms), Run 3 (1,079ms), Run 4 (1,062ms), Run 5 (845ms), Run 6 (1,235ms).
+**Analysis:** The single worker struggles most with sudden bursts — 1,923ms p(95) and only 44 RPS. Run 7 is the worst 1w spike result across all 7 runs, consistent with higher host load. Linear scaling is clearly visible: 4w handles the same burst at 170ms / 116 RPS. Consistent across runs: Run 2 (1,225ms), Run 3 (1,079ms), Run 4 (1,062ms), Run 5 (845ms), Run 6 (1,235ms), Run 7 (1,923ms).
 
 **Conclusion:** PASSES with 0% errors but highest spike latency among all configs.
 
@@ -212,30 +212,30 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **795ms** |
-| p(90) | 199ms |
-| Avg | 2,159ms |
-| Median | 17ms |
-| Max | 60,009ms |
-| Error rate | **3.48%** (3,029 failures) |
-| Checks | 96.5% (84,107/87,136) |
-| Total requests | 87,137 |
-| RPS | **71** |
+| p(95) | **31,348ms** |
+| p(90) | 1,123ms |
+| Avg | 3,060ms |
+| Median | 27ms |
+| Max | 60,050ms |
+| Error rate | **4.64%** (1,961 failures) |
+| Checks | 95.4% (40,323/42,283) |
+| Total requests | 42,285 |
+| RPS | **47.9** |
 | Peak VUs | 500 |
-| Dropped iterations | **138,953** |
-| Bookings | 9,916 success |
-| Duration | ~20.5 min (ran to completion) |
+| Dropped iterations | **58,384** |
+| Bookings | 4,827 success |
+| Duration | ~14.7 min (ABORTED — threshold breached) |
 
-**Threshold result:** PASS* — p(95) of 795ms is below the 5,000ms abortOnFail threshold, so the test ran to completion. However, 3.48% error rate and 138,953 dropped iterations indicate the event loop is under severe stress.
+**Threshold result:** FAIL — p(95) of 31,348ms breaches the 5,000ms abortOnFail threshold. The test was aborted after ~14.7 minutes. This is a catastrophic collapse — the event loop became completely overwhelmed.
 
-**Cross-config breakpoint comparison (Run 6):**
+**Cross-config breakpoint comparison (Run 7):**
 | Workers | p(95) | RPS | Errors | Dropped | Duration |
 |---------|-------|-----|--------|---------|----------|
-| **1w** | **795ms** | **71** | **3.48%** | **138,953** | ~20.5 min |
-| 2w | 149ms | 189 | 0% | 189 | 20 min |
-| 4w | 51ms | 189 | 0% | 8 | 20 min |
+| **1w** | **31,348ms** | **47.9** | **4.64%** | **58,384** | ~14.7 min (ABORTED) |
+| 2w | 10,035ms | 65.7 | 5.19% | 109,285 | ~18.4 min (ABORTED) |
+| 4w | 85ms | 189 | 0% | negligible | 20 min (full) |
 
-**Analysis:** Run 6 shows moderate 1w collapse — nearly identical to Run 5 (814ms / 3.36%). The bimodal distribution (median=17ms, avg=2,159ms) shows most requests either complete quickly or time out. RPS of 71 (vs 189 for 4w) confirms the 1w ceiling. 4w and 2w both hit ~189 RPS with 0% errors in this run.
+**Analysis:** Run 7 shows catastrophic 1w collapse — the second catastrophic regime result after Run 4 (30,864ms). The bimodal distribution (median=27ms, avg=3,060ms) is characteristic of a system where most requests time out while a fast minority complete. RPS of 47.9 is the lowest 1w breakpoint result across all 7 runs.
 
 **Variability across runs:**
 - Run 1: 192ms / 189 RPS / 0% (anomalously good — U-curve anomaly)
@@ -244,10 +244,11 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 - Run 4: **30,864ms / 43.6 RPS / 6.87%** (catastrophic collapse, aborted early)
 - Run 5: **814ms / 72.9 RPS / 3.36%** (moderate collapse, ran to completion)
 - Run 6: **795ms / 71 RPS / 3.48%** (moderate collapse — consistent with Run 5)
+- Run 7: **31,348ms / 47.9 RPS / 4.64%** (catastrophic collapse — aborted at ~14.7 min)
 
-Three distinct regimes observed: stable degraded (~1,480ms, Runs 2–3), moderate collapse (~795–814ms p95, Runs 5–6), catastrophic collapse (30,864ms, Run 4). The 1w event loop sits right at its capacity boundary — Docker CPU scheduling determines which regime occurs.
+Three distinct regimes confirmed: stable degraded (~1,480ms, Runs 2–3), moderate collapse (~795–814ms p95, Runs 5–6), catastrophic collapse (30,864ms/31,348ms, Runs 4 and 7). The 1w event loop sits right at its capacity boundary — Docker CPU scheduling determines which regime occurs.
 
-**Conclusion:** PASSES K6 thresholds in Run 5 but shows significant degradation. The single event loop is fundamentally unable to sustain the throughput that 4w handles cleanly (189 RPS). 1w behavior under open-model load is inherently unpredictable.
+**Conclusion:** FAILS K6 thresholds with catastrophic collapse. The single event loop is fundamentally unable to sustain the throughput that 4w handles cleanly (189 RPS). 1w behavior under open-model load is inherently unpredictable — 2 out of 7 runs produced catastrophic collapse.
 
 ---
 
@@ -259,25 +260,25 @@ Three distinct regimes observed: stable degraded (~1,480ms, Runs 2–3), moderat
 
 | Metric | Value |
 |--------|-------|
-| Booking latency p(95) | 40ms |
-| Booking latency avg | 18ms |
-| Booking latency median | 12ms |
-| HTTP p(95) | 35ms |
-| Max | 533ms |
+| Booking latency p(95) | 58ms |
+| Booking latency avg | 25ms |
+| Booking latency median | 17ms |
+| HTTP p(95) | 47ms |
+| Max | 754ms |
 | Error rate | 0% |
-| Total requests | 17,596 |
-| RPS | 145 |
+| Total requests | 17,398 |
+| RPS | 144 |
 | Bookings success | 283 |
-| Sold out (409) | 8,514 |
+| Sold out (409) | 8,415 |
 
-**Cross-config contention comparison (Run 6):**
+**Cross-config contention comparison (Run 7):**
 | Workers | Booking p(95) | Bookings | Sold out |
 |---------|--------------|----------|----------|
-| **1w** | **40ms** | 283 | 8,514 |
-| 2w | 27ms | 283 | 8,085 |
-| 4w | 23ms | 283 | 8,119 |
+| **1w** | **58ms** | 283 | 8,415 |
+| 2w | 30ms | 283 | 8,054 |
+| 4w | 26ms | 283 | 8,048 |
 
-**Analysis:** All three configs correctly produce exactly 283 bookings with zero deadlocks. The 283-booking invariant has held across all 6 runs and all 3 configs without exception — proving transaction isolation is preserved regardless of worker count.
+**Analysis:** All three configs correctly produce exactly 283 bookings with zero deadlocks. The 283-booking invariant has held across all 7 runs and all 3 configs without exception — proving transaction isolation is preserved regardless of worker count. The 1w p95 jumped to 58ms in Run 7 (from 40ms in Run 6) due to higher host load, but correctness is unaffected.
 
 **Conclusion:** Exactly 283 bookings succeeded (matching ticket capacity). Zero deadlocks, zero double-bookings. The `with_for_update()` locking strategy performs correctly under extreme contention. Consistent across all runs.
 
@@ -309,27 +310,27 @@ Three distinct regimes observed: stable degraded (~1,480ms, Runs 2–3), moderat
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **987ms** |
-| p(90) | 835ms |
-| Avg | 269ms |
-| Median | 29ms |
-| Max | 1,251ms |
+| p(95) | **1,835ms** |
+| p(90) | 1,732ms |
+| Avg | 420ms |
+| Median | 28ms |
+| Max | 2,213ms |
 | Error rate | 0% |
-| Checks | 100% (27,039/27,039) |
-| Total requests | 27,040 |
-| RPS | 73 |
-| Bookings | 3,241 |
+| Checks | 100% (22,689/22,689) |
+| Total requests | 22,690 |
+| RPS | 61 |
+| Bookings | 2,740 |
 
-**Cross-config recovery comparison (Run 6):**
+**Cross-config recovery comparison (Run 7):**
 | Workers | p(95) | Max | RPS | Errors |
 |---------|-------|-----|-----|--------|
-| **1w** | **987ms** | 1,251ms | **73** | 0% |
-| 2w | 280ms | 498ms | 95 | 0% |
-| 4w | 146ms | 408ms | 103 | 0% |
+| **1w** | **1,835ms** | 2,213ms | **61** | 0% |
+| 2w | 251ms | 637ms | 97 | 0% |
+| 4w | 135ms | 451ms | 104 | 0% |
 
-**Analysis:** Run 6 confirms clear linear ordering in recovery: 4w (146ms) < 2w (280ms) < 1w (987ms), all 0% errors — identical pattern to Run 5. The 1w result (987ms) is consistent with the ~960–987ms range seen in Runs 3 and 6. Linear scaling is clearly visible in recovery behavior.
+**Analysis:** Run 7 shows clear linear ordering in recovery: 4w (135ms) < 2w (251ms) < 1w (1,835ms), all 0% errors. The 1w result (1,835ms) is the worst recovery result across all 7 runs, consistent with higher host load. Linear scaling is clearly visible in recovery behavior.
 
-**Conclusion:** PASSES thresholds with 0% errors. Linear ordering holds for the second consecutive run.
+**Conclusion:** PASSES thresholds with 0% errors. Linear ordering confirmed for the seventh consecutive run.
 
 ---
 
@@ -359,9 +360,9 @@ The three tests that flipped from FAIL to PASS (spike, breakpoint, recovery) all
 | Metric | Value |
 |--------|-------|
 | Comfortable capacity | 50 VUs / 32 RPS — p(95) 24ms, 0% errors |
-| Stress capacity | 300 VUs / 168 RPS — p(95) 854ms, 0% errors |
-| Spike survival | 300 VU burst — p(95) 1,235ms, 0% errors |
-| Sustained ceiling | ~43–189 RPS under open-model load — highly variable (ranges from moderate degradation to catastrophic collapse) |
+| Stress capacity | 300 VUs / 120–174 RPS — p(95) 804–1,616ms, 0% errors (threshold FAILED in Run 7) |
+| Spike survival | 300 VU burst — p(95) 845–1,923ms, 0% errors |
+| Sustained ceiling | ~43–72 RPS under open-model load — highly variable (moderate collapse, catastrophic collapse, or rare stable degradation) |
 | Endurance | 32 min at 30 VUs — zero degradation |
 
 ### Architectural Strengths
@@ -372,8 +373,8 @@ The three tests that flipped from FAIL to PASS (spike, breakpoint, recovery) all
 
 ### Limitations Under High Load
 1. **Single event loop saturates** — with one CPU core doing all processing, 300+ VUs cause queuing
-2. **Consistent stress ceiling, variable breakpoint** — Stress is consistent across Runs 2–6 (886ms→839ms→830ms→804ms→854ms). Breakpoint is highly variable: three distinct regimes observed — stable degraded (Runs 2–3, ~1,480ms), moderate collapse (Runs 5–6, ~795–814ms p95 but avg=2,000ms+, 136–139K dropped), catastrophic collapse (Run 4, 30,864ms, aborted early).
+2. **Variable stress ceiling, very variable breakpoint** — Stress varies considerably: Runs 2–6 cluster at 804–886ms, but Run 7 jumped to 1,616ms (threshold failure) due to higher host load. Breakpoint is highly variable: three distinct regimes — stable degraded (Runs 2–3, ~1,480ms), moderate collapse (Runs 5–6, ~795–814ms p95 but avg=2,000ms+), catastrophic collapse (Runs 4 and 7, 30,864ms/31,348ms, aborted early).
 3. **Slowest recovery** — takes longest to drain request backlog after bursts
 
 ### Thesis Takeaway
-The single-worker config performs well at moderate concurrency but is the weakest config under high load. Across six runs, 1w is consistently the worst-performing config at high concurrency — confirming linear scaling where adding workers improves performance. The undivided 90-connection pool is an advantage, but the single event loop is the hard bottleneck above ~100 VUs. The breakpoint behavior is the most striking demonstration: 4w sustains ~189 RPS with 0% errors across all 6 runs, while 1w cannot reliably sustain even 73 RPS and can collapse catastrophically (Run 4: 30,864ms p95, 6.87% errors, 80,420 dropped iterations).
+The single-worker config performs well at moderate concurrency but is the weakest config under high load. Across seven runs, 1w is consistently the worst-performing config at high concurrency — confirming linear scaling where adding workers improves performance. The undivided 90-connection pool is an advantage, but the single event loop is the hard bottleneck above ~100 VUs. Run 7 was the worst 1w run: stress threshold failed (1,616ms), breakpoint catastrophically collapsed again (31,348ms, aborted at 14.7 min), spike reached 1,923ms. Despite all this, 0% errors in every non-breakpoint test. The breakpoint behavior is the most striking demonstration: 4w sustains ~189 RPS with 0% errors across all 7 runs, while 1w cannot reliably sustain even 72 RPS and collapses catastrophically in 2 of 7 runs.

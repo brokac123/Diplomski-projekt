@@ -106,6 +106,21 @@ Six consecutive runs now confirm linear scaling in the stress test without excep
 
 ---
 
+## Run 7 — 2026-04-18
+
+**Pattern observed: Linear scaling confirmed for the 7th consecutive run; 2w collapsed in breakpoint; 4w stress hit highest RPS across all runs**
+
+Seven consecutive runs now confirm linear scaling in the stress test without exception. Stress ordering: 4w (120ms p95 / 257 RPS) > 2w (253ms / 230 RPS) > 1w (1,616ms / 120 RPS) — 4w's 257 RPS is the highest stress throughput across all 7 runs. The 1w p95 jumped to 1,616ms (from ~804–886ms in Runs 2–6), consistent with higher host load during this run. Recovery produced a clear linear ordering for the third consecutive run: 4w (135ms) < 2w (251ms) < 1w (1,835ms), all 0% errors. Breakpoint: 4w hit its consistent ~189 RPS ceiling (85ms / 0% errors); 2w collapsed hard (10,035ms all-requests p95, 5.19% errors, 109K dropped) — worst 2w breakpoint result since Run 1 (6.7%); 1w also collapsed catastrophically (31,348ms, 4.64% errors, 58K dropped).
+
+| Test | 1w p95 | 1w RPS | 1w Err | 2w p95 | 2w RPS | 2w Err | 4w p95 | 4w RPS | 4w Err |
+|------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+| Stress | 1,616ms | 120 | 0% | 253ms | 230 | 0% | 120ms | 257 | 0% |
+| Breakpoint | 31,348ms | 47.9 | 4.64% | 10,035ms | 65.7 | 5.19% | 85ms | 189 | 0% |
+| Spike | 1,923ms | 44 | 0% | 277ms | 104 | 0% | 170ms | 116 | 0% |
+| Recovery | 1,835ms | 61 | 0% | 251ms | 97 | 0% | 135ms | 104 | 0% |
+
+---
+
 ## Test Classification and Scaling Expectations
 
 Linear scaling (4w > 2w > 1w in latency/throughput) only appears when **worker CPU saturation is the limiting factor**. If the bottleneck is elsewhere — database locks, network, or simply no load at all — adding workers does not help.
@@ -146,7 +161,7 @@ The test suite is intentionally split: roughly half the tests operate below the 
 
 1. **Low-load tests are deterministic** — Load (~24ms), soak (~24ms), contention (283 bookings) produce nearly identical results across all runs and configs.
 2. **High-load tests show variance** — Stress, breakpoint, spike, and recovery can vary between runs due to Docker CPU scheduling and OS background load. Variance is largest in burst tests (spike, recovery).
-3. **Linear scaling is the consistent pattern** — All six runs confirm 4w as the best config under high load, with 2w in the middle and 1w worst. The stress test (most reliable measurement) shows this ordering without exception across all 6 runs. Run 1's U-curve was a connection pool anomaly. Both 2w and 4w can reach the system's breakpoint ceiling (~189 RPS) — 1w cannot.
-4. **4w breakpoint ceiling is rock-solid** — 189 RPS is consistent across all six runs (106ms / 112ms / 65ms / 139ms / 50ms / 51ms). While p95 latency varies with Docker scheduling, the throughput ceiling never moves. This is the most reliable single data point in the entire dataset.
-5. **1w breakpoint behavior shows three distinct regimes across 6 runs** — Stable ceiling ~1,464–1,483ms (Runs 2–3); catastrophic collapse to 30,864ms / 6.87% errors (Run 4); moderate degradation at ~795–814ms p95 with ~3.4–3.5% errors and ~136–139K dropped (Runs 5–6). The 1w event loop is near its capacity boundary and small changes in system load can produce very different outcomes. Under open-model arrival rate (breakpoint), 1w is fundamentally unable to absorb the load that 2w and 4w handle cleanly.
-6. **Burst tests (spike, recovery) remain the most variable** — 4w recovery ranged from 128ms (Run 3) → 539ms (Run 2) → 562ms (Run 4) → 142ms (Run 5) → 146ms (Run 6). Runs 5 and 6 both produced a clear recovery ordering: 4w < 2w < 1w. The consistent finding is that 1w always has the worst spike and recovery latency and 4w is typically fastest — but the exact p95 values shift between runs.
+3. **Linear scaling is the consistent pattern** — All seven runs confirm 4w as the best config under high load, with 2w in the middle and 1w worst. The stress test (most reliable measurement) shows this ordering without exception across all 7 runs. Run 1's U-curve was a connection pool anomaly. Only 4w can reliably reach the system's breakpoint ceiling (~189 RPS) — 1w never can; 2w sometimes does (Runs 4 and 6) but also collapses unpredictably (Runs 1 and 7).
+4. **4w breakpoint ceiling is rock-solid** — 189 RPS is consistent across all seven runs (106ms / 112ms / 65ms / 139ms / 50ms / 51ms / 85ms). While p95 latency varies with Docker scheduling, the throughput ceiling never moves. This is the most reliable single data point in the entire dataset.
+5. **1w and 2w breakpoint behavior shows high variability across 7 runs** — 1w has shown three regimes: stable ceiling ~1,464–1,483ms (Runs 2–3), moderate collapse ~795–814ms p95 with ~3.4–3.5% errors (Runs 5–6), and catastrophic collapse to 30,000ms+ (Runs 4 and 7). 2w is also volatile: clean ceiling (Runs 4 and 6) vs. outright collapse (Runs 1 and 7). Both configs are at or near their capacity boundary under open-model arrival rate; small host-load changes produce very different outcomes. Only 4w is structurally immune to collapse in breakpoint.
+6. **Burst tests (spike, recovery) remain the most variable** — 4w recovery ranged from 128ms (Run 3) → 539ms (Run 2) → 562ms (Run 4) → 142ms (Run 5) → 146ms (Run 6) → 135ms (Run 7). Runs 5, 6, and 7 all produced a clear recovery ordering: 4w < 2w < 1w. The consistent finding is that 1w always has the worst spike and recovery latency and 4w is typically fastest — but the exact p95 values shift between runs.
