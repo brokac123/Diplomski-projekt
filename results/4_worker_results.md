@@ -1,6 +1,6 @@
 # K6 Performance Test Results — 4 Uvicorn Workers
 
-**Date:** 2026-04-21 (Run 9)
+**Date:** 2026-04-22 (Run 10)
 **Configuration:** Docker (FastAPI + PostgreSQL), 4 Uvicorn workers
 **Seed data:** 1,000 users, 100 events, 2,000 bookings (re-seeded before each test via `run_tests.sh`)
 **Monitoring:** K6 → Prometheus remote write → Grafana dashboard (live visualization)
@@ -22,17 +22,17 @@
 | Baseline | Smoke | 10 | 73ms | 0% | 67 | 2,143 | PASS |
 | Endpoint Benchmark | Isolation | 20 | ~61ms* | 0% | ~56 | ~25,872 | PASS |
 | Load | Normal load | 50 | 24ms | 0% | 32 | 15,412 | PASS |
-| Stress | Overload | 300 | 132ms | 0% | 255 | 122,249 | PASS |
-| Spike | Burst | 300 | 173ms | 0% | 116 | 24,442 | PASS |
+| Stress | Overload | 300 | 129ms | 0% | 254 | 122,191 | PASS |
+| Spike | Burst | 300 | 156ms | 0% | 117 | 24,570 | PASS |
 | Soak | Endurance | 30 | 24ms | 0% | 23 | 44,036 | PASS |
-| Breakpoint | Capacity | 500 | 96ms | 0% | 189 | 226,482 | PASS |
+| Breakpoint | Capacity | 500 | 125ms | 0% | 189 | 226,491 | PASS |
 | Contention | Locking | 50 | 29ms† | 0% | 138 | 16,700 | PASS |
 | Read vs Write | Traffic profile | 30 | ~27ms | 0% | ~44 | ~16,203 | PASS |
-| Recovery | Resilience | 300 | 124ms | 0% | 104 | 38,494 | PASS |
+| Recovery | Resilience | 300 | 154ms | 0% | 103 | 38,216 | PASS |
 
 *Overall p(95) across all scenarios. †Contention booking-specific latency p(95).
 
-**All 10 tests PASS with 0% errors. Breakpoint produced the strongest result in the entire dataset: 96ms p95, 189 RPS, 0% errors, and completed 30 seconds early (1,200s vs 1,230s max) — the abort threshold was never approached. While 1w and 2w both degraded in breakpoint, 4w continued its perfect record across all 9 runs. 4w is the only config with 0% errors across all 10 tests in all 9 runs.**
+**All 10 tests PASS with 0% errors across all 10 runs. 4w is the only config with 0% errors across all 10 tests in all 10 runs. Breakpoint: 125ms / 189 RPS / 0% errors / 20 min — consistent ceiling performance for the 10th consecutive run. In Run 10, both 2w and 4w reached the ceiling cleanly — the strongest endorsement yet of the ~189 RPS system throughput ceiling as a shared infrastructure bottleneck rather than a per-config limit.**
 
 ---
 
@@ -120,25 +120,25 @@
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **132ms** |
-| p(90) | 111ms |
+| p(95) | **129ms** |
+| p(90) | 108ms |
 | Avg | 51ms |
-| Median | ~38ms |
-| Max | ~600ms |
+| Median | 41ms |
+| Max | 538ms |
 | Error rate | 0% |
-| Checks | 100% (122,248/122,248) |
-| Total requests | 122,249 |
-| RPS | **255** |
-| Bookings | 13,884 success |
+| Checks | 100% (122,190/122,190) |
+| Total requests | 122,191 |
+| RPS | **254** |
+| Bookings | 13,996 success |
 
-**Cross-config comparison (Run 9):**
+**Cross-config comparison (Run 10):**
 | Workers | p(95) | RPS | Errors |
 |---------|-------|-----|--------|
-| 1w | 1,634ms | 120 | 0% |
-| 2w | 388ms | 205 | 0% |
-| **4w** | **132ms** | **255** | 0% |
+| 1w | 749ms | 173 | 0% |
+| 2w | 243ms | 233 | 0% |
+| **4w** | **129ms** | **254** | 0% |
 
-**Analysis:** 4w achieves the lowest p(95) (132ms) and highest RPS (255) at 300 VUs. The ordering 4w > 2w > 1w holds for the ninth consecutive run without exception. Nine-run trend: 1w at 740–1,634ms (2 FAIL), 2w at 240–388ms, 4w at 120–218ms — linear scaling confirmed across all 9 runs.
+**Analysis:** 4w achieves the lowest p(95) (129ms) and highest RPS (254) at 300 VUs. The ordering 4w > 2w > 1w holds for the tenth consecutive run without exception. Ten-run trend: 1w at 740–1,634ms (2 FAIL), 2w at 240–388ms, 4w at 120–218ms — linear scaling confirmed across all 10 runs.
 
 **Conclusion:** Best stress config across all runs. PASSES cleanly with 0% errors.
 
@@ -151,25 +151,25 @@
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **173ms** |
-| p(90) | 132ms |
-| Avg | 55ms |
-| Median | ~30ms |
-| Max | ~450ms |
+| p(95) | **156ms** |
+| p(90) | 122ms |
+| Avg | 52ms |
+| Median | 34ms |
+| Max | 560ms |
 | Error rate | 0% |
-| Checks | 100% (24,441/24,441) |
-| Total requests | 24,442 |
-| RPS | 116 |
-| Bookings | 2,925 |
+| Checks | 100% (24,569/24,569) |
+| Total requests | 24,570 |
+| RPS | 117 |
+| Bookings | 2,938 |
 
-**Cross-config comparison (Run 9):**
+**Cross-config comparison (Run 10):**
 | Workers | p(95) | Max | RPS | Errors |
 |---------|-------|-----|-----|--------|
-| 1w | 1,933ms | ~2,100ms | 44 | 0% |
-| 2w | 467ms | ~650ms | 87 | 0% |
-| **4w** | **173ms** | ~450ms | **116** | 0% |
+| 1w | 825ms | 996ms | 68 | 0% |
+| 2w | 301ms | 483ms | 102 | 0% |
+| **4w** | **156ms** | 560ms | **117** | 0% |
 
-**Analysis:** 4w handles the 300 VU burst best — 173ms p(95) and 116 RPS. Linear scaling is clear: adding workers progressively reduces spike latency. Across all 9 runs, 4w spike ranges from 133ms to 609ms depending on Docker CPU scheduling. At 173ms in Run 9, 4w clearly outperforms 1w (1,933ms) and 2w (467ms).
+**Analysis:** 4w handles the 300 VU burst best — 156ms p(95) and 117 RPS. Linear scaling is clear: adding workers progressively reduces spike latency. Across all 10 runs, 4w spike ranges from 133ms to 609ms depending on Docker CPU scheduling. At 156ms in Run 10, 4w clearly outperforms 1w (825ms) and 2w (301ms).
 
 **Conclusion:** PASSES with zero errors. Best spike config across all runs.
 
@@ -205,30 +205,30 @@
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **96ms** |
-| p(90) | 77ms |
-| Avg | 30ms |
-| Median | 13ms |
-| Max | 1,490ms |
+| p(95) | **125ms** |
+| p(90) | 105ms |
+| Avg | 40ms |
+| Median | 15ms |
+| Max | 1,705ms |
 | Error rate | 0% |
-| Checks | 100% (226,481/226,481) |
-| Total requests | 226,482 |
+| Checks | 100% (226,490/226,490) |
+| Total requests | 226,491 |
 | RPS | **189** |
-| Peak VUs | low |
-| Dropped iterations | **18** |
-| Bookings | 22,670 success |
-| Duration | **20 min (completed 30 seconds early)** |
+| Peak VUs | ~59 |
+| Dropped iterations | **9** |
+| Bookings | 22,985 success |
+| Duration | **20 min (clean ceiling)** |
 
-**4w ran the breakpoint with 0% errors for the ninth consecutive run**, and for the first time completed 30 seconds before the 1,230s maximum — the p95 abort threshold (5,000ms) was never approached. This is the strongest 4w breakpoint result in the dataset.
+**4w ran the breakpoint with 0% errors for the tenth consecutive run.** In Run 10, both 2w and 4w completed in exactly 20 minutes at 189 RPS with 0% errors — the most notable finding of Run 10. 4w leads on latency (125ms vs 147ms) but both configs hit the system ceiling.
 
-**Cross-config breakpoint comparison (Run 9):**
+**Cross-config breakpoint comparison (Run 10):**
 | Workers | p(95) | RPS | Errors | Dropped | Duration |
 |---------|-------|-----|--------|---------|----------|
-| 1w | 888ms | 69 | 3.55% | 140,900 | ~20.5 min (degraded) |
-| 2w | 1,138ms | 140 | 0.57% | 53,778 | ~20.5 min (degraded) |
-| **4w** | **96ms** | **189** | **0%** | **18** | **20 min (30s early)** |
+| 1w | 968ms | 72 | 3.43% | 138,141 | ~20.5 min (degraded) |
+| 2w | 147ms | 189 | 0% | 87 | 20 min (clean ceiling) |
+| **4w** | **125ms** | **189** | **0%** | **9** | **20 min (clean ceiling)** |
 
-**The most consistent result in the dataset.** Across all nine runs:
+**The most consistent result in the dataset.** Across all ten runs:
 - Run 1: 106ms / 189 RPS / 0% errors
 - Run 2: 112ms / 189 RPS / 0% errors
 - Run 3: 65ms / 189 RPS / 0% errors
@@ -237,9 +237,10 @@
 - Run 6: 51ms / 188.74 RPS / 0% errors
 - Run 7: 85ms / 188.74 RPS / 0% errors
 - Run 8: 167ms / 188.60 RPS / 0% errors
-- Run 9: **96ms / 189 RPS / 0% errors (completed 30s early)**
+- Run 9: 96ms / 189 RPS / 0% errors (completed 30s early)
+- Run 10: **125ms / 189 RPS / 0% errors (clean ceiling, joined by 2w)**
 
-The ~189 RPS throughput ceiling is a stable system characteristic confirmed across all nine runs. The p(95) varies (50–167ms) based on Docker CPU scheduling, but throughput never deviates. Run 9 is the first run where the test completed early — 4w never once pushed the arrival rate high enough to trigger the 5,000ms abort condition. 4w's scaling advantage is CPU-bound and appears clearly in the stress test (132ms vs 388ms for 2w).
+The ~189 RPS throughput ceiling is a stable system characteristic confirmed across all ten runs. The p(95) varies (50–167ms) based on Docker CPU scheduling, but throughput never deviates. Run 10 adds an important insight: both 2w and 4w hit the ceiling in the same run — confirming the ceiling is a shared infrastructure constraint (DB throughput, WSL2 network), not a CPU limit. 4w's CPU advantage shows clearly in the stress test (129ms vs 243ms for 2w).
 
 ---
 
@@ -301,27 +302,27 @@ All three correctly produce exactly 283 bookings with zero deadlocks — the 283
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **124ms** |
-| p(90) | 93ms |
-| Avg | 40ms |
+| p(95) | **154ms** |
+| p(90) | 105ms |
+| Avg | 43ms |
 | Median | 23ms |
-| Max | 312ms |
+| Max | 425ms |
 | Error rate | 0% |
-| Checks | 100% (38,493/38,493) |
-| Total requests | 38,494 |
-| RPS | 104 |
-| Bookings | 4,619 |
+| Checks | 100% (38,215/38,215) |
+| Total requests | 38,216 |
+| RPS | 103 |
+| Bookings | 4,556 |
 
-**Cross-config recovery comparison (Run 9):**
+**Cross-config recovery comparison (Run 10):**
 | Workers | p(95) | Max | RPS | Errors |
 |---------|-------|-----|-----|--------|
-| 1w | 778ms | 1,199ms | 75 | 0% |
-| 2w | 451ms | 684ms | 85 | 0% |
-| **4w** | **124ms** | **312ms** | **104** | 0% |
+| 1w | 866ms | 1,278ms | 74 | 0% |
+| 2w | 268ms | 465ms | 96 | 0% |
+| **4w** | **154ms** | **425ms** | **103** | 0% |
 
-**Analysis:** Run 9 produced a clear linear recovery ordering: 4w (124ms) < 2w (451ms) < 1w (778ms), all 0% errors. The 4w result (124ms) is consistent with Runs 3, 5–9 (128–146ms). Across nine runs, 4w recovery: 537ms (Run 1), 539ms (Run 2), 128ms (Run 3), 562ms (Run 4), 142ms (Run 5), 146ms (Run 6), 135ms (Run 7), 135ms (Run 8), 124ms (Run 9). The pattern is bimodal: Runs 1, 2, 4 cluster around 537–562ms; Runs 3, 5–9 cluster at 124–146ms — Runs 5–9 have all been in the faster mode, suggesting Docker scheduling has been consistently favorable in recent runs.
+**Analysis:** Run 10 produced a clear linear recovery ordering: 4w (154ms) < 2w (268ms) < 1w (866ms), all 0% errors. Across ten runs, 4w recovery: 537ms (Run 1), 539ms (Run 2), 128ms (Run 3), 562ms (Run 4), 142ms (Run 5), 146ms (Run 6), 135ms (Run 7), 135ms (Run 8), 124ms (Run 9), 154ms (Run 10). Runs 3, 5–10 all cluster at 124–154ms — six consecutive runs in the fast mode.
 
-**Conclusion:** PASSES with 0% errors. Runs 5–8 all show the clearest multi-config linear ordering.
+**Conclusion:** PASSES with 0% errors. Runs 5–10 all show clear multi-config linear ordering.
 
 ---
 
@@ -351,27 +352,27 @@ The stress test improvement (~1.7–1.9s → 134ms, ~12x) is the most dramatic. 
 | Metric | Value |
 |--------|-------|
 | Comfortable capacity | 50 VUs / 32 RPS — p(95) 24ms, 0% errors |
-| Stress capacity | 300 VUs / 255 RPS — p(95) 132ms, 0% errors |
-| Spike survival | 300 VU burst — p(95) 173ms, 0% errors |
-| Sustained ceiling | ~189 RPS for 20 min — p(95) 50–167ms, 0% errors (all 9 runs; Run 9 completed 30s early) |
+| Stress capacity | 300 VUs / 254 RPS — p(95) 129ms, 0% errors |
+| Spike survival | 300 VU burst — p(95) 156ms, 0% errors |
+| Sustained ceiling | ~189 RPS for 20 min — p(95) 50–167ms, 0% errors (all 10 runs) |
 | Endurance | 32 min at 30 VUs — zero degradation |
 
 ### Why 4 Workers Wins
-1. **Best stress performance:** Lowest p(95) at 300 VUs — consistent across all 9 runs (129/177/130/123/218/141/120/134/132ms). 1w ranges from 740–1,634ms (with 2 threshold FAILs).
-2. **Best breakpoint throughput:** ~189 RPS throughput — rock-solid across all 9 runs (189/189/189/188.7/188.7/188.74/188.74/188.60/189 RPS), always 0% errors — Run 9 completed 30 seconds early (first ever early completion)
-3. **Best spike performance in all 9 runs:** 1w consistently worst, 4w consistently best
-4. **Zero errors everywhere:** 100% clean across all 10 tests in all 9 runs — only config with perfect error record
+1. **Best stress performance:** Lowest p(95) at 300 VUs — consistent across all 10 runs (129/177/130/123/218/141/120/134/132/129ms). 1w ranges from 740–1,634ms (with 2 threshold FAILs).
+2. **Best breakpoint throughput:** ~189 RPS throughput — rock-solid across all 10 runs (189/189/189/188.7/188.7/188.74/188.74/188.60/189/189 RPS), always 0% errors. Run 10 confirms the ceiling is a shared infrastructure limit — 2w also hit it cleanly.
+3. **Best spike performance in all 10 runs:** 1w consistently worst, 4w consistently best
+4. **Zero errors everywhere:** 100% clean across all 10 tests in all 10 runs — only config with perfect error record
 
 ### Run-to-Run Consistency
 
-| Test | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | Run 6 | Run 7 | Run 8 | Run 9 | Variance |
-|------|-------|-------|-------|-------|-------|-------|-------|-------|-------|---------|
-| Stress | 129ms | 177ms | 130ms | 123ms | 218ms | 141ms | 120ms | 134ms | **132ms** | Low (120–218ms across 9 runs) |
-| Breakpoint | 106ms | 112ms | 65ms | 139ms | 50ms | 51ms | 85ms | 167ms | **96ms** | Very Low (RPS stable at ~189 all 9 runs) |
-| Spike | 155ms | **609ms** | 133ms | 145ms | 160ms | 154ms | 170ms | 184ms | **173ms** | Moderate (Run 2 anomaly) |
-| Recovery | 137ms | **539ms** | 128ms | **562ms** | 142ms | 146ms | 135ms | 135ms | **124ms** | High (Docker scheduling) |
+| Test | Run 1 | Run 2 | Run 3 | Run 4 | Run 5 | Run 6 | Run 7 | Run 8 | Run 9 | Run 10 | Variance |
+|------|-------|-------|-------|-------|-------|-------|-------|-------|-------|--------|---------|
+| Stress | 129ms | 177ms | 130ms | 123ms | 218ms | 141ms | 120ms | 134ms | 132ms | **129ms** | Low (120–218ms across 10 runs) |
+| Breakpoint | 106ms | 112ms | 65ms | 139ms | 50ms | 51ms | 85ms | 167ms | 96ms | **125ms** | Very Low (RPS stable at ~189 all 10 runs) |
+| Spike | 155ms | **609ms** | 133ms | 145ms | 160ms | 154ms | 170ms | 184ms | 173ms | **156ms** | Moderate (Run 2 anomaly) |
+| Recovery | 137ms | **539ms** | 128ms | **562ms** | 142ms | 146ms | 135ms | 135ms | 124ms | **154ms** | High (Docker scheduling) |
 
-Breakpoint throughput is the most consistent result (all 9 runs: ~189 RPS, 0% errors; Run 9 completed 30s early). Stress is also very consistent (120–218ms across 9 runs). Spike and recovery p95 latency is more variable — but 4w is best or co-best in all 9 runs. Recovery Runs 3, 5–9 (124–146ms) cluster at the low end; Runs 1, 2, 4 cluster around 537–562ms.
+Breakpoint throughput is the most consistent result (all 10 runs: ~189 RPS, 0% errors). Stress is also very consistent (120–218ms across 10 runs). Spike and recovery p95 latency is more variable — but 4w is best or co-best in all 10 runs. Recovery Runs 3, 5–10 (124–154ms) cluster at the low end; Runs 1, 2, 4 cluster around 537–562ms.
 
 ### The 1:1 CPU-to-Worker Ratio
 The key thesis insight: 4 workers with 4 CPUs (1:1 ratio) outperforms other configurations under sustained high load. Each worker gets its own CPU core for its event loop, distributing connection handling across independent processes. While per-worker connection pools are smaller (22 each), the faster processing frees connections quickly.
@@ -380,4 +381,4 @@ The key thesis insight: 4 workers with 4 CPUs (1:1 ratio) outperforms other conf
 At low concurrency (50 VUs or less), all three configs perform identically. The multi-worker advantage only appears under high concurrency (200+ VUs) where event loop saturation becomes a factor. Contention tests are also immune to worker count — row-level locking serializes transactions regardless of how many workers compete.
 
 ### Linear Scaling Conclusion
-Across all nine runs: **4w > 2w > 1w** under high load, consistently. The improvement scales with the number of workers — each additional worker reduces latency and increases throughput proportionally when CPUs are the bottleneck. The stress test is the most reliable proof: 4w always produces the lowest p(95) and highest RPS without exception across all 9 runs. The breakpoint test confirms 4w as the only config that sustains the ~189 RPS system ceiling with 0% errors across all nine runs — Run 9 was the strongest ever (96ms p95, completed 30 seconds early). In Run 9, both 1w and 2w degraded at breakpoint while 4w was the cleanest it has ever been — the widest gap between 4w and the other configs in the entire dataset. 1w stress failed the threshold for the second time (Run 9: 1,634ms genuine CPU saturation; Run 7: WSL2 anomaly), further demonstrating that 4w is the only config that handles all high-load tests reliably. This confirms that the 1:1 CPU-to-worker ratio enables linear scaling in a FastAPI/Uvicorn + PostgreSQL architecture.
+Across all ten runs: **4w > 2w > 1w** under high load, consistently. The improvement scales with the number of workers — each additional worker reduces latency and increases throughput proportionally when CPUs are the bottleneck. The stress test is the most reliable proof: 4w always produces the lowest p(95) and highest RPS without exception across all 10 runs. The breakpoint test confirms 4w as the only config that sustains the ~189 RPS system ceiling with 0% errors across all ten runs. Run 10 adds an important nuance: when Docker scheduling is favorable, 2w is also sufficient to reach the ceiling — both 2w and 4w completed at 189 RPS / 0% errors in Run 10, confirming the ceiling is a shared infrastructure limit (DB, WSL2 network) rather than a CPU limit. 4w's advantage is CPU-bound latency under stress (129ms vs 243ms), not throughput ceiling. 1w stress failed the threshold twice across 10 runs (Runs 7 and 9), confirming single-worker CPU saturation is a real and repeatable risk. This confirms that the 1:1 CPU-to-worker ratio enables linear scaling in a FastAPI/Uvicorn + PostgreSQL architecture.
