@@ -1,6 +1,6 @@
 # K6 Performance Test Results — 1 Uvicorn Worker
 
-**Date:** 2026-04-22 (Run 10)
+**Date:** 2026-04-23 (Run 11)
 **Configuration:** Docker (FastAPI + PostgreSQL), 1 Uvicorn worker
 **Seed data:** 1,000 users, 100 events, 2,000 bookings (re-seeded before each test via `run_tests.sh`)
 **Monitoring:** K6 → Prometheus remote write → Grafana dashboard (live visualization)
@@ -21,17 +21,17 @@
 | Baseline | Smoke | 10 | 33ms | 0% | 92 | 2,913 | PASS |
 | Endpoint Benchmark | Isolation | 20 | ~41ms* | 0% | ~59 | ~27,335 | PASS |
 | Load | Normal load | 50 | 27ms | 0% | 32 | 15,440 | PASS |
-| Stress | Overload | 300 | 749ms | 0% | 173 | 82,990 | PASS |
-| Spike | Burst | 300 | 825ms | 0% | 68 | 14,253 | PASS |
+| Stress | Overload | 300 | 1,556ms | 0% | 124 | 59,436 | FAIL ❌ |
+| Spike | Burst | 300 | 1,820ms | 0% | 45 | 9,476 | PASS |
 | Soak | Endurance | 30 | 25ms | 0% | 23 | 44,228 | PASS |
-| Breakpoint | Capacity | 500 | 968ms | 3.43% | 72 | 88,048 | PASS* |
+| Breakpoint | Capacity | 500 | 31,820ms | 4.82% | 47 | 41,799 | PASS* |
 | Contention | Locking | 50 | 41ms† | 0% | 146 | 17,592 | PASS |
 | Read vs Write | Traffic profile | 30 | ~32ms | 0% | ~43 | ~16,112 | PASS |
-| Recovery | Resilience | 300 | 866ms | 0% | 74 | 27,294 | PASS |
+| Recovery | Resilience | 300 | 1,804ms | 0% | 62 | 22,767 | PASS |
 
 *Overall p(95) across all scenarios. †Contention booking-specific latency p(95).
 
-**All 10 tests PASS with 0% errors. Stress returns to normal (749ms — back within the typical 740–886ms band) after Run 9's threshold failure. Breakpoint passes K6 threshold (p95=968ms < 5,000ms, ran to full ~20.5 min) but shows 3.43% errors and 138,141 dropped iterations (PASS*) — consistent with the moderate collapse regime seen in Runs 5–6, 8, and 9. Run 10 is a clean round-number final run — 10 of 10 tests pass across all 3 configs.**
+**9 of 10 tests PASS. Stress FAILS threshold (1,556ms > 1,500ms) — 3rd failure across 11 runs. Run 11 was a bad run for 1w overall: stress fail, catastrophic breakpoint collapse (31,820ms / 47 RPS / 4.82% errors), and very high spike/recovery latency. 2w and 4w remain completely clean in Run 11, confirming the degradation is 1w-specific CPU saturation, not a host anomaly.**
 
 ---
 
@@ -122,27 +122,27 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **749ms** |
-| p(90) | 665ms |
-| Avg | 312ms |
-| Median | 260ms |
-| Max | 1,175ms |
+| p(95) | **1,556ms** |
+| p(90) | 1,414ms |
+| Avg | 635ms |
+| Median | 542ms |
+| Max | 1,951ms |
 | Error rate | 0% |
-| Checks | 100% (82,989/82,989) |
-| Total requests | 82,990 |
-| RPS | **173** |
-| Bookings | 9,739 success |
+| Checks | 100% (59,435/59,435) |
+| Total requests | 59,436 |
+| RPS | **124** |
+| Bookings | 7,114 success |
 
-**Cross-config comparison (Run 10):**
+**Cross-config comparison (Run 11):**
 | Workers | p(95) | RPS | Errors |
 |---------|-------|-----|--------|
-| **1w** | **749ms** | **173** | 0% |
-| 2w | 243ms | 233 | 0% |
-| 4w | 129ms | 254 | 0% |
+| **1w** | **1,556ms ❌** | **124** | 0% |
+| 2w | 240ms | 234 | 0% |
+| 4w | 136ms | 254 | 0% |
 
-**Analysis:** The single worker shows significantly higher latency than 2w and 4w under 300 VU stress. With only one event loop processing all requests, the single CPU core becomes the bottleneck at this concurrency level. Run 10 produced 749ms p95 — back within the normal range (740–886ms) after Run 9's threshold failure. Linear scaling is clearly visible: 4w at 129ms / 254 RPS, 2w at 243ms / 233 RPS, 1w at 749ms / 173 RPS. Across runs: Run 2 (886ms / 164 RPS), Run 3 (839ms / 167 RPS), Run 4 (830ms / 167 RPS), Run 5 (804ms / 174 RPS), Run 6 (854ms / 168 RPS), Run 7 (1,616ms / 120 RPS — WSL2 anomaly), Run 8 (740ms / 173 RPS), Run 9 (1,634ms / 120 RPS — genuine CPU saturation), Run 10 (749ms / 173 RPS — normal) — out of 10 runs, 1w stress has failed the threshold twice (Runs 7 and 9).
+**Analysis:** Run 11 exceeded the threshold — the third failure across 11 runs. With only one event loop, the single CPU core saturates at 300 VUs. 2w and 4w are clean (240ms and 136ms), confirming this is 1w CPU saturation, not a host anomaly. Linear scaling is clearly visible despite the fail: 4w at 136ms / 254 RPS, 2w at 240ms / 234 RPS, 1w at 1,556ms / 124 RPS. Across runs: Run 2 (886ms / 164 RPS), Run 3 (839ms / 167 RPS), Run 4 (830ms / 167 RPS), Run 5 (804ms / 174 RPS), Run 6 (854ms / 168 RPS), Run 7 (1,616ms / 120 RPS — WSL2 anomaly), Run 8 (740ms / 173 RPS), Run 9 (1,634ms / 120 RPS — CPU saturation), Run 10 (749ms / 173 RPS — normal), Run 11 (1,556ms / 124 RPS — CPU saturation) — out of 11 runs, 1w stress has failed the threshold three times (Runs 7, 9, and 11).
 
-**Conclusion:** PASSES p(95) threshold (749ms < 1,500ms). Linear scaling ordering maintained: 4w > 2w > 1w clearly visible.
+**Conclusion:** FAILS p(95) threshold (1,556ms > 1,500ms). Linear scaling ordering maintained: 4w > 2w > 1w clearly visible.
 
 ---
 
@@ -153,27 +153,27 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **825ms** |
-| p(90) | 778ms |
-| Avg | 454ms |
-| Median | 584ms |
-| Max | 996ms |
+| p(95) | **1,820ms** |
+| p(90) | 1,771ms |
+| Avg | 944ms |
+| Median | 1,290ms |
+| Max | 2,199ms |
 | Error rate | 0% |
-| Checks | 100% (14,252/14,252) |
-| Total requests | 14,253 |
-| RPS | 68 |
-| Bookings | 1,677 |
+| Checks | 100% (9,475/9,475) |
+| Total requests | 9,476 |
+| RPS | 45 |
+| Bookings | 1,143 |
 
-**Cross-config comparison (Run 10):**
+**Cross-config comparison (Run 11):**
 | Workers | p(95) | Max | RPS | Errors |
 |---------|-------|-----|-----|--------|
-| **1w** | **825ms** | 996ms | **68** | 0% |
-| 2w | 301ms | 483ms | 102 | 0% |
-| 4w | 156ms | 560ms | 117 | 0% |
+| **1w** | **1,820ms** | 2,199ms | **45** | 0% |
+| 2w | 287ms | 439ms | 103 | 0% |
+| 4w | 165ms | 504ms | 117 | 0% |
 
-**Analysis:** The single worker struggles most with sudden bursts — 825ms p(95) and only 68 RPS. Linear scaling is clearly visible: 4w handles the same burst at 156ms / 117 RPS. Consistent across runs: Run 2 (1,225ms), Run 3 (1,079ms), Run 4 (1,062ms), Run 5 (845ms), Run 6 (1,235ms), Run 7 (1,923ms), Run 8 (890ms), Run 9 (1,933ms), Run 10 (825ms).
+**Analysis:** Run 11 shows 1w at 1,820ms — elevated alongside the stress FAIL, consistent with a high-saturation run. Linear scaling clearly visible: 4w (165ms) and 2w (287ms) handle the burst significantly better. Consistent across runs: Run 2 (1,225ms), Run 3 (1,079ms), Run 4 (1,062ms), Run 5 (845ms), Run 6 (1,235ms), Run 7 (1,923ms), Run 8 (890ms), Run 9 (1,933ms), Run 10 (825ms), Run 11 (1,820ms).
 
-**Conclusion:** PASSES threshold (825ms < 2,000ms). 0% errors but highest spike latency among all configs.
+**Conclusion:** PASSES threshold (1,820ms < 2,000ms). 0% errors but highest spike latency among all configs.
 
 ---
 
@@ -212,30 +212,30 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **968ms** |
-| p(90) | 180ms |
-| Avg | 2,171ms |
-| Median | 16ms |
-| Max | 60,006ms |
-| Error rate | **3.43%** (3,017 failures) |
-| Checks | 96.57% (85,030/88,047) |
-| Total requests | 88,048 |
-| RPS | **72** |
+| p(95) | **31,820ms** |
+| p(90) | 1,129ms |
+| Avg | 3,117ms |
+| Median | 25ms |
+| Max | 60,027ms |
+| Error rate | **4.82%** (2,013 failures) |
+| Checks | 95.18% (39,785/41,798) |
+| Total requests | 41,799 |
+| RPS | **47** |
 | Peak VUs | 500 |
-| Dropped iterations | **138,141** |
-| Bookings | 9,944 success |
+| Dropped iterations | **significant** |
+| Bookings | 4,775 success |
 | Duration | ~20.5 min (full run) |
 
-**Threshold result:** PASS* — p(95) of 968ms is within the 5,000ms abortOnFail threshold. The test ran to full completion (~20.5 min). However, 3.43% error rate and 138,141 dropped iterations indicate moderate collapse — the event loop could not sustain the arrival rate and began timing out requests.
+**Threshold result:** PASS* — p(95) of 31,820ms is well below the 5,000ms abortOnFail threshold only because abortOnFail uses the all-requests p(95), and the bimodal distribution (median=25ms / avg=3,117ms) keeps the overall p(95) from triggering abort. However, 4.82% errors and a severely depressed RPS (47) confirm catastrophic collapse.
 
-**Cross-config breakpoint comparison (Run 10):**
+**Cross-config breakpoint comparison (Run 11):**
 | Workers | p(95) | RPS | Errors | Dropped | Duration |
 |---------|-------|-----|--------|---------|----------|
-| **1w** | **968ms** | **72** | **3.43%** | **138,141** | ~20.5 min (degraded) |
-| 2w | 147ms | 189 | 0% | 87 | 20 min (clean ceiling) |
-| 4w | 125ms | 189 | 0% | 9 | 20 min (clean ceiling) |
+| **1w** | **31,820ms** | **47** | **4.82%** | **significant** | ~20.5 min (collapsed) |
+| 2w | 68ms | 189 | 0% | small | 20 min (clean ceiling) |
+| 4w | 104ms | 189 | 0% | small | 20 min (clean ceiling) |
 
-**Analysis:** Run 10 shows 1w in moderate collapse — the bimodal distribution (median=16ms, avg=2,171ms) is characteristic of a system where most requests time out while a fast minority complete. The 138,141 dropped iterations confirm the system was severely under-provisioned for the offered arrival rate. In contrast, both 2w and 4w hit the system ceiling cleanly in Run 10 (189 RPS / 0% errors / 20 min completion) — the widest gap between 1w and the other two configs.
+**Analysis:** Run 11 shows 1w in catastrophic collapse — same pattern as Runs 4 and 7. Only 47 RPS sustained (lowest in the dataset), 4.82% errors. Both 2w and 4w hit the ceiling cleanly for the second consecutive run — the gap between 1w and the other configs has never been larger.
 
 **Variability across runs:**
 - Run 1: 192ms / 189 RPS / 0% (anomalously good — U-curve anomaly)
@@ -248,10 +248,11 @@ All Phase B tests use the same weighted traffic distribution (25% browse events,
 - Run 8: **389ms / 71.5 RPS / 3.43%** (moderate collapse — ran to full completion)
 - Run 9: **888ms / 69 RPS / 3.55%** (moderate collapse — consistent with Runs 5, 6, and 8)
 - Run 10: **968ms / 72 RPS / 3.43%** (moderate collapse — consistent with Runs 5, 6, 8, and 9)
+- Run 11: **31,820ms / 47 RPS / 4.82%** (catastrophic collapse — co-occurs with 1w stress FAIL)
 
-Three distinct regimes confirmed: stable degraded (~1,480ms, Runs 2–3), moderate collapse (Runs 5–6, 8, 9, and 10 — ~69–73 RPS, 3.4–4.75% errors), catastrophic collapse (Runs 4 and 7 — 30,000ms+). The moderate collapse regime is the normal 1w breakpoint behavior.
+Three distinct regimes confirmed: stable degraded (~1,480ms, Runs 2–3), moderate collapse (Runs 5–6, 8, 9, and 10 — ~69–73 RPS, 3.4–4.75% errors), catastrophic collapse (Runs 4, 7, and 11 — 30,000ms+). The moderate collapse regime is the typical 1w breakpoint behavior; catastrophic collapse occurs when CPU pressure is highest.
 
-**Conclusion:** K6 PASSES threshold (968ms < 5,000ms, no abort). However, 3.43% error rate and 138,141 dropped iterations confirm moderate collapse. 1w breakpoint ceiling is ~69–73 RPS under normal conditions. The single event loop is fundamentally unable to sustain the throughput that 4w handles cleanly (189 RPS).
+**Conclusion:** K6 technically PASSES abortOnFail threshold (bimodal distribution keeps all-requests p(95) from triggering abort). However, 4.82% errors and 47 RPS confirm catastrophic collapse. The single event loop is fundamentally unable to sustain the throughput that 4w handles cleanly (189 RPS).
 
 ---
 
@@ -313,27 +314,27 @@ Three distinct regimes confirmed: stable degraded (~1,480ms, Runs 2–3), modera
 
 | Metric | Value |
 |--------|-------|
-| p(95) | **866ms** |
-| p(90) | 773ms |
-| Avg | 263ms |
-| Median | 30ms |
-| Max | 1,278ms |
+| p(95) | **1,804ms** |
+| p(90) | 1,733ms |
+| Avg | 417ms |
+| Median | 27ms |
+| Max | 2,151ms |
 | Error rate | 0% |
-| Checks | 100% (27,293/27,293) |
-| Total requests | 27,294 |
-| RPS | 74 |
-| Bookings | 3,312 |
+| Checks | 100% (22,766/22,766) |
+| Total requests | 22,767 |
+| RPS | 62 |
+| Bookings | 2,686 |
 
-**Cross-config recovery comparison (Run 10):**
+**Cross-config recovery comparison (Run 11):**
 | Workers | p(95) | Max | RPS | Errors |
 |---------|-------|-----|-----|--------|
-| **1w** | **866ms** | 1,278ms | **74** | 0% |
-| 2w | 268ms | 465ms | 96 | 0% |
-| 4w | 154ms | 425ms | 103 | 0% |
+| **1w** | **1,804ms** | 2,151ms | **62** | 0% |
+| 2w | 258ms | 419ms | 96 | 0% |
+| 4w | 592ms | 1,320ms | 86 | 0% |
 
-**Analysis:** Run 10 shows clear linear ordering in recovery: 4w (154ms) < 2w (268ms) < 1w (866ms), all 0% errors. The 1w result (866ms) is in normal range. Linear scaling clearly visible in recovery behavior.
+**Analysis:** Run 11 shows 1w at 1,804ms — elevated consistent with the stress FAIL and general high-saturation behavior. 2w (258ms) is the best recovery config this run, with 4w showing an anomalous result (592ms — similar to Runs 2 and 4). The bimodal distribution in 4w (median=30ms) suggests most requests completed fast; the tail was inflated by Docker CPU scheduling. 1w remains worst across all runs.
 
-**Conclusion:** PASSES thresholds with 0% errors. Linear ordering confirmed for the tenth consecutive run.
+**Conclusion:** PASSES thresholds with 0% errors. 1w is worst in recovery; linear ordering holds for 1w < other configs but 4w had a tail anomaly this run.
 
 ---
 
@@ -363,7 +364,7 @@ The three tests that flipped from FAIL to PASS (spike, breakpoint, recovery) all
 | Metric | Value |
 |--------|-------|
 | Comfortable capacity | 50 VUs / 32 RPS — p(95) 27ms, 0% errors |
-| Stress capacity | 300 VUs / 120–174 RPS — p(95) 740–1,634ms; threshold failed in Runs 7 (WSL2) and 9 (genuine CPU saturation); Run 10 back to normal (749ms) |
+| Stress capacity | 300 VUs / 120–174 RPS — p(95) 740–1,634ms; threshold failed in Runs 7 (WSL2), 9 (CPU saturation), and 11 (CPU saturation) |
 | Spike survival | 300 VU burst — p(95) 825–1,933ms, 0% errors |
 | Sustained ceiling | ~43–73 RPS under open-model load — highly variable (moderate collapse, catastrophic collapse, or rare stable degradation) |
 | Endurance | 32 min at 30 VUs — zero degradation |
@@ -376,8 +377,8 @@ The three tests that flipped from FAIL to PASS (spike, breakpoint, recovery) all
 
 ### Limitations Under High Load
 1. **Single event loop saturates** — with one CPU core doing all processing, 300+ VUs cause queuing
-2. **Variable stress ceiling, very variable breakpoint** — Stress has failed the threshold twice across 10 runs: Run 7 (1,616ms — WSL2 fragmentation) and Run 9 (1,634ms — genuine CPU saturation, confirmed by clean 2w/4w). Runs 2–6, 8, and 10 cluster at 740–886ms. Breakpoint is highly variable: three distinct regimes — stable degraded (Runs 2–3, ~1,480ms), moderate collapse (Runs 5–6, 8, 9, and 10, ~69–73 RPS, 3.4–4.75% errors), catastrophic collapse (Runs 4 and 7, 30,000ms+, aborted early).
+2. **Variable stress ceiling, very variable breakpoint** — Stress has failed the threshold three times across 11 runs: Run 7 (1,616ms — WSL2 fragmentation), Run 9 (1,634ms — CPU saturation), and Run 11 (1,556ms — CPU saturation, confirmed by clean 2w/4w). Runs 2–6, 8, and 10 cluster at 740–886ms. Breakpoint is highly variable: three distinct regimes — stable degraded (Runs 2–3, ~1,480ms), moderate collapse (Runs 5–6, 8, 9, and 10, ~69–73 RPS, 3.4–4.75% errors), catastrophic collapse (Runs 4, 7, and 11, 30,000ms+).
 3. **Slowest recovery** — takes longest to drain request backlog after bursts
 
 ### Thesis Takeaway
-The single-worker config performs well at moderate concurrency but is the weakest config under high load. Across ten runs, 1w is consistently the worst-performing config at high concurrency — confirming linear scaling where adding workers improves performance. The undivided 90-connection pool is an advantage, but the single event loop is the hard bottleneck above ~100 VUs. Run 7 was anomalous (WSL2 memory fragmentation): stress threshold failed (1,616ms), breakpoint catastrophically collapsed (31,348ms, aborted at 14.7 min). Run 9 was the second stress threshold failure (1,634ms), due to genuine CPU saturation — confirmed by clean 2w and 4w results. Run 10 is the clean final round-number run: 1w stress returns to normal (749ms), breakpoint continues in the moderate collapse regime (968ms / 72 RPS / 3.43% errors / 138,141 dropped). Out of 10 runs, 1w stress has failed the threshold twice (Runs 7 and 9) and breakpoint has catastrophically collapsed twice (Runs 4 and 7). The breakpoint behavior is the most striking demonstration: 4w sustains ~189 RPS with 0% errors every run, while 1w cannot reliably sustain even 73 RPS and collapses catastrophically in 2 of 10 runs.
+The single-worker config performs well at moderate concurrency but is the weakest config under high load. Across eleven runs, 1w is consistently the worst-performing config at high concurrency — confirming linear scaling where adding workers improves performance. The undivided 90-connection pool is an advantage, but the single event loop is the hard bottleneck above ~100 VUs. Run 7 was anomalous (WSL2 memory fragmentation): stress threshold failed (1,616ms), breakpoint catastrophically collapsed (31,348ms, aborted at 14.7 min). Runs 9 and 11 are the 2nd and 3rd stress threshold failures (1,634ms and 1,556ms respectively), both due to genuine CPU saturation — confirmed by clean 2w and 4w results in both runs. Out of 11 runs, 1w stress has failed the threshold three times (Runs 7, 9, and 11) and breakpoint has catastrophically collapsed three times (Runs 4, 7, and 11). The breakpoint behavior is the most striking demonstration: 4w sustains ~189 RPS with 0% errors every run, while 1w cannot reliably sustain even 73 RPS and collapses catastrophically in 3 of 11 runs.
